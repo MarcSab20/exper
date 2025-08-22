@@ -1,12 +1,15 @@
 package application;
 
 import javafx.fxml.FXML;
+import javafx.scene.Node;
 import javafx.scene.chart.*;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.application.Platform;
 import java.sql.*;
 import java.sql.Date;
 import java.util.*;
@@ -24,7 +27,7 @@ public class dashboardController {
     @FXML private Label serviceInfoLabel;
 
     // Informations de connexion à la base de données
-    private final String DB_URL = "jdbc:mysql://localhost:3306/exploit";
+    private final String DB_URL = "jdbc:mysql://localhost:3306/master";
     private final String DB_USER = "marco";
     private final String DB_PASSWORD = "29Papa278.";
     
@@ -35,6 +38,9 @@ public class dashboardController {
     public void initialize() {
         currentService = UserSession.getCurrentService();
         availableTables = ServicePermissions.getTablesForService(currentService);
+        
+        // Configurer le conteneur de graphiques
+        setupChartsContainer();
         
         try {
             // Initialiser les informations de service
@@ -51,6 +57,21 @@ public class dashboardController {
             
         } catch (SQLException e) {
             showErrorAlert("Erreur de connexion à la base de données", e.getMessage());
+        }
+    }
+    
+    /**
+     * Configure le conteneur de graphiques pour une meilleure visibilité
+     */
+    private void setupChartsContainer() {
+        if (chartsContainer != null) {
+            chartsContainer.setHgap(15);
+            chartsContainer.setVgap(15);
+            chartsContainer.setPadding(new Insets(10));
+            chartsContainer.setAlignment(Pos.TOP_LEFT);
+            
+            // Assurer que le conteneur peut s'agrandir
+            chartsContainer.setPrefWrapLength(Region.USE_COMPUTED_SIZE);
         }
     }
     
@@ -210,6 +231,9 @@ public class dashboardController {
     }
 
     private void createServiceSpecificCharts() throws SQLException {
+        // Nettoyer le conteneur avant d'ajouter de nouveaux graphiques
+        Platform.runLater(() -> chartsContainer.getChildren().clear());
+        
         switch (currentService) {
             case "Logistique":
                 createLogistiqueCharts();
@@ -238,7 +262,7 @@ public class dashboardController {
         
         // Graphique des maintenances par type si disponible
         if (availableTables.contains("maintenance")) {
-            addDistributionChart("maintenance", "type", "Maintenances par Type", "Barre");
+            addDistributionChart("maintenance", "type_maintenance", "Maintenances par Type", "Barre");
         }
         
         // Graphique de base sur le sexe (table commune)
@@ -314,16 +338,27 @@ public class dashboardController {
             return; // Pas de données à afficher
         }
         
-        switch (chartType) {
-            case "Camembert":
-                createPieChart(data, title);
-                break;
-            case "Barre":
-                createBarChart(data, title, column);
-                break;
-            default:
-                createBarChart(data, title, column);
-        }
+        Platform.runLater(() -> {
+            try {
+                Chart chart = null;
+                switch (chartType) {
+                    case "Camembert":
+                        chart = createPieChart(data, title);
+                        break;
+                    case "Barre":
+                        chart = createBarChart(data, title, column);
+                        break;
+                    default:
+                        chart = createBarChart(data, title, column);
+                }
+                
+                if (chart != null) {
+                    addChartToContainer(chart);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
     }
     
     private void addTemporalChart(String tableName, String timeColumn, String title, String chartType) throws SQLException {
@@ -333,16 +368,27 @@ public class dashboardController {
             return;
         }
         
-        switch (chartType) {
-            case "Ligne":
-                createLineChart(data, title, timeColumn);
-                break;
-            case "Barre":
-                createBarChart(data, title, timeColumn);
-                break;
-            default:
-                createLineChart(data, title, timeColumn);
-        }
+        Platform.runLater(() -> {
+            try {
+                Chart chart = null;
+                switch (chartType) {
+                    case "Ligne":
+                        chart = createLineChart(data, title, timeColumn);
+                        break;
+                    case "Barre":
+                        chart = createBarChart(data, title, timeColumn);
+                        break;
+                    default:
+                        chart = createLineChart(data, title, timeColumn);
+                }
+                
+                if (chart != null) {
+                    addChartToContainer(chart);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
     }
     
     private Map<String, Integer> getDistributionData(String tableName, String column) throws SQLException {
@@ -389,7 +435,7 @@ public class dashboardController {
         return data;
     }
     
-    private void createPieChart(Map<String, Integer> data, String title) {
+    private PieChart createPieChart(Map<String, Integer> data, String title) {
         ObservableList<PieChart.Data> pieChartData = FXCollections.observableArrayList();
         
         for (Map.Entry<String, Integer> entry : data.entrySet()) {
@@ -401,10 +447,14 @@ public class dashboardController {
         chart.setLabelsVisible(true);
         chart.setLegendVisible(true);
         
-        addChartToContainer(chart);
+        // Améliorer la taille et la visibilité
+        chart.setPrefSize(400, 350);
+        chart.setMinSize(350, 300);
+        
+        return chart;
     }
     
-    private void createBarChart(Map<String, Integer> data, String title, String xAxisLabel) {
+    private BarChart<String, Number> createBarChart(Map<String, Integer> data, String title, String xAxisLabel) {
         CategoryAxis xAxis = new CategoryAxis();
         NumberAxis yAxis = new NumberAxis();
         BarChart<String, Number> barChart = new BarChart<>(xAxis, yAxis);
@@ -421,10 +471,18 @@ public class dashboardController {
         }
         
         barChart.getData().add(series);
-        addChartToContainer(barChart);
+        
+        // Améliorer la taille et la visibilité
+        barChart.setPrefSize(450, 350);
+        barChart.setMinSize(400, 300);
+        
+        // Configurer l'affichage des catégories
+        xAxis.setTickLabelRotation(45);
+        
+        return barChart;
     }
     
-    private void createLineChart(Map<String, Integer> data, String title, String xAxisLabel) {
+    private LineChart<String, Number> createLineChart(Map<String, Integer> data, String title, String xAxisLabel) {
         CategoryAxis xAxis = new CategoryAxis();
         NumberAxis yAxis = new NumberAxis();
         LineChart<String, Number> lineChart = new LineChart<>(xAxis, yAxis);
@@ -443,7 +501,11 @@ public class dashboardController {
         lineChart.getData().add(series);
         lineChart.setCreateSymbols(true);
         
-        addChartToContainer(lineChart);
+        // Améliorer la taille et la visibilité
+        lineChart.setPrefSize(450, 350);
+        lineChart.setMinSize(400, 300);
+        
+        return lineChart;
     }
 
     @FXML
@@ -474,14 +536,24 @@ public class dashboardController {
         ListView<String> existingCharts = new ListView<>();
         
         for (int i = 0; i < chartsContainer.getChildren().size(); i++) {
-            VBox chartBox = (VBox) chartsContainer.getChildren().get(i);
-            Chart chart = (Chart) chartBox.getChildren().get(0);
-            existingCharts.getItems().add(chart.getTitle());
+            Node chartNode = chartsContainer.getChildren().get(i);
+            if (chartNode instanceof VBox) {
+                VBox chartBox = (VBox) chartNode;
+                if (!chartBox.getChildren().isEmpty() && chartBox.getChildren().get(0) instanceof Chart) {
+                    Chart chart = (Chart) chartBox.getChildren().get(0);
+                    existingCharts.getItems().add(chart.getTitle());
+                }
+            } else if (chartNode instanceof Chart) {
+                Chart chart = (Chart) chartNode;
+                existingCharts.getItems().add(chart.getTitle());
+            }
         }
         
         Button removeChartBtn = new Button("Supprimer le graphique sélectionné");
+        Button refreshChartsBtn = new Button("Actualiser tous les graphiques");
         
-        VBox existingChartsBox = new VBox(10, existingCharts, removeChartBtn);
+        VBox existingChartsBox = new VBox(10, existingCharts, 
+            new HBox(10, removeChartBtn, refreshChartsBtn));
         existingChartsPane.setContent(existingChartsBox);
         
         // Section pour ajouter un nouveau graphique
@@ -567,55 +639,68 @@ public class dashboardController {
                         "Suppression d'un graphique - Service: " + currentService);
             }
         });
+        
+        // Gestionnaire pour actualiser tous les graphiques
+        refreshChartsBtn.setOnAction(e -> {
+            try {
+                createServiceSpecificCharts();
+                dialog.close();
+                HistoryManager.logUpdate("Dashboard", 
+                        "Actualisation des graphiques - Service: " + currentService);
+            } catch (SQLException ex) {
+                showErrorAlert("Erreur d'actualisation", ex.getMessage());
+            }
+        });
 
         dialog.showAndWait();
     }
     
     private void loadColumnsForTable(String tableName, ComboBox<String> columnSelect) {
         columnSelect.getItems().clear();
+        List<String> columns = TableColumnManager.getColumnsForTable(tableName);
         
-        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
-            DatabaseMetaData metaData = conn.getMetaData();
-            ResultSet columns = metaData.getColumns("exploit", null, tableName, null);
-            
-            while (columns.next()) {
-                String columnName = columns.getString("COLUMN_NAME");
-                String dataType = columns.getString("TYPE_NAME");
-                
-                // Filtrer les colonnes appropriées pour les graphiques
-                if (isColumnSuitableForChart(dataType)) {
-                    columnSelect.getItems().add(columnName);
-                }
-            }
-            
-        } catch (SQLException e) {
-            showErrorAlert("Erreur de base de données", "Impossible de charger les colonnes: " + e.getMessage());
-        }
-    }
-    
-    private boolean isColumnSuitableForChart(String dataType) {
-        // Retourner true pour les types de données appropriés pour les graphiques
-        return dataType.toUpperCase().contains("VARCHAR") ||
-               dataType.toUpperCase().contains("CHAR") ||
-               dataType.toUpperCase().contains("TEXT") ||
-               dataType.toUpperCase().contains("ENUM") ||
-               dataType.toUpperCase().contains("INT") ||
-               dataType.toUpperCase().contains("DATE");
+        // Filtrer les colonnes appropriées pour les graphiques
+        List<String> graphableColumns = columns.stream()
+                .filter(col -> !col.toLowerCase().equals("id") && !col.toLowerCase().startsWith("id_"))
+                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+        
+        columnSelect.getItems().addAll(graphableColumns);
     }
 
     private void addChartToContainer(Chart chart) {
-        VBox chartBox = new VBox(chart);
-        chartBox.getStyleClass().add("chart-container");
-        chart.getStyleClass().add("chart");
+        if (chart == null) return;
         
-        // Définir des dimensions spécifiques pour le graphique
-        chart.setPrefWidth(400);
-        chart.setPrefHeight(300);
+        // Créer un conteneur pour le graphique avec un titre visible
+        VBox chartContainer = new VBox(5);
+        chartContainer.getStyleClass().add("chart-container");
+        chartContainer.setAlignment(Pos.CENTER);
         
-        if (chartsContainer.getChildren().size() < 8) { // Maximum 8 graphiques
-            chartsContainer.getChildren().add(chartBox);
+        // Ajouter une bordure et un style pour améliorer la visibilité
+        chartContainer.setStyle(
+            "-fx-background-color: white;" +
+            "-fx-border-color: #e0e0e0;" +
+            "-fx-border-width: 1px;" +
+            "-fx-border-radius: 8px;" +
+            "-fx-background-radius: 8px;" +
+            "-fx-padding: 10px;" +
+            "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 5, 0, 0, 2);"
+        );
+        
+        // Définir des dimensions fixes pour une meilleure visibilité
+        chart.setPrefSize(420, 320);
+        chart.setMinSize(380, 280);
+        chart.setMaxSize(500, 400);
+        
+        // Améliorer le style du graphique
+        chart.setStyle("-fx-background-color: transparent;");
+        
+        chartContainer.getChildren().add(chart);
+        
+        // Limiter le nombre de graphiques pour éviter l'encombrement
+        if (chartsContainer.getChildren().size() < 6) {
+            chartsContainer.getChildren().add(chartContainer);
         } else {
-            showErrorAlert("Limite atteinte", "Vous avez atteint le nombre maximum de graphiques (8).");
+            showErrorAlert("Limite atteinte", "Vous avez atteint le nombre maximum de graphiques (6) pour une meilleure lisibilité.");
         }
     }
     

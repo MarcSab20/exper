@@ -31,20 +31,18 @@ import java.io.FileOutputStream;
 import java.sql.*;
 
 public class RequeteController {
-    @FXML
-    private ComboBox<String> colonneComboBox;
-    @FXML
-    private ComboBox<String> operateurComboBox;
-    @FXML
-    private HBox valueContainer;
-    @FXML
-    private ListView<String> contraintesListView;
-    @FXML
-    private ComboBox<String> formatSortieComboBox;
-    @FXML
-    private HBox optionsContainer;
-    @FXML
-    private StackPane resultsContainer;
+    @FXML private ComboBox<String> colonneComboBox;
+    @FXML private ComboBox<String> operateurComboBox;
+    @FXML private HBox valueContainer;
+    @FXML private ListView<String> contraintesListView;
+    @FXML private ComboBox<String> formatSortieComboBox;
+    @FXML private HBox optionsContainer;
+    @FXML private StackPane resultsContainer;
+    
+    // Nouveaux composants pour graphiques à 2 variables
+    @FXML private ComboBox<String> colonneX;
+    @FXML private ComboBox<String> colonneY;
+    @FXML private CheckBox graphique2Variables;
     
     private TextField textField;
     private ComboBox<String> valueComboBox;
@@ -61,8 +59,8 @@ public class RequeteController {
     
     private List<CheckBox> selectedColumnsCheckBoxes;
 
-    private final Map<String, String> colonneTypes = new HashMap<>();
-    private final Map<String, List<String>> stringValues = new HashMap<>();
+    private Map<String, String> colonneTypes = new HashMap<>();
+    private Map<String, List<String>> stringValues = new HashMap<>();
     private final List<String> contraintes = new ArrayList<>();
     private final DateTimeFormatter dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE;
     
@@ -71,20 +69,15 @@ public class RequeteController {
     private static final String DB_USER = "marco";
     private static final String DB_PASSWORD = "29Papa278.";
     
-    // Liste des colonnes de la table final
-    private final List<String> columnNames = Arrays.asList(
-        "id", "matricule", "nom", "grade", "echelon", "date_engagement", "formation", 
-        "Region_Origine", "date_Naissance", "lieu_Naissance", "departement", "arrondissement",
-        "date_Grade", "ref_Grade", "ref_echelon", "date_echelon", "ethnie", "religion",
-        "nom_Pere", "nom_Mere", "situation_matrimoniale", "nombre_enfants", "statut", "Origine",
-        "unite", "emploi", "date_affectation", "ref_affectation", "diplome_Civil", 
-        "diplome_militaire", "categorie", "specialite", "qualification", "ordre_valeur",
-        "Ordre_Merite_Camerounais", "Ordre_Merite_Sportif", "Force_Publique", "Vaillance",
-        "Position_SPA", "Sexe", "Etat_Punitions", "promo_contingent"
-    );
+    // Données dynamiques selon le service
+    private List<String> columnNames = new ArrayList<>();
+    private String currentService;
     
     @FXML
     public void initialize() {
+        // Obtenir le service actuel
+        currentService = UserSession.getCurrentService();
+        
         // Initialiser les composants de valeur
         initializeValueComponents();
         
@@ -104,79 +97,34 @@ public class RequeteController {
             updateOptionsContainer();
         });
         
-        // Charger les métadonnées de la table depuis la base de données
-        loadTableMetadata();
+        // Charger les métadonnées dynamiquement selon le service
+        loadServiceMetadata();
     }
     
-    private void loadTableMetadata() {
-        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
-            // Obtenir les métadonnées de la table final
-            DatabaseMetaData metaData = conn.getMetaData();
-            ResultSet columns = metaData.getColumns(null, null, "final", null);
+    /**
+     * Charge les métadonnées spécifiques au service actuel
+     */
+    private void loadServiceMetadata() {
+        try {
+            // Obtenir les colonnes disponibles pour ce service
+            columnNames = TableColumnManager.getAvailableColumnsForService(currentService);
             
-            // Charger les noms de colonnes et leurs types
-            while (columns.next()) {
-                String columnName = columns.getString("COLUMN_NAME");
-                String dataType = columns.getString("TYPE_NAME");
-                
-                // Mapper les types SQL vers nos types simplifiés
-                switch (dataType.toUpperCase()) {
-                    case "VARCHAR":
-                    case "CHAR":
-                    case "TEXT":
-                        colonneTypes.put(columnName, "STRING");
-                        break;
-                    case "INT":
-                    case "TINYINT":
-                    case "SMALLINT":
-                    case "BIGINT":
-                        colonneTypes.put(columnName, "INTEGER");
-                        break;
-                    case "DECIMAL":
-                    case "FLOAT":
-                    case "DOUBLE":
-                        colonneTypes.put(columnName, "DECIMAL");
-                        break;
-                    case "DATE":
-                    case "DATETIME":
-                    case "TIMESTAMP":
-                        colonneTypes.put(columnName, "DATE");
-                        break;
-                    default:
-                        colonneTypes.put(columnName, "STRING");
-                }
-            }
+            // Obtenir les types des colonnes
+            colonneTypes = TableColumnManager.getColumnTypesForService(currentService);
             
-            // Charger les valeurs possibles pour chaque colonne de type STRING
-            for (String colonne : columnNames) {
-                if (colonneTypes.getOrDefault(colonne, "").equals("STRING")) {
-                    loadDistinctValues(conn, colonne);
-                }
-            }
+            // Obtenir les valeurs distinctes pour les colonnes STRING
+            stringValues = TableColumnManager.getDistinctValuesForService(currentService);
             
             // Remplir la ComboBox des colonnes
             colonneComboBox.setItems(FXCollections.observableArrayList(columnNames));
             
-        } catch (SQLException e) {
+            LOGGER.info("Métadonnées chargées pour le service " + currentService + 
+                       ": " + columnNames.size() + " colonnes disponibles");
+            
+        } catch (Exception e) {
             e.printStackTrace();
-            showAlert("Erreur de base de données", "Impossible de charger les métadonnées: " + e.getMessage());
-        }
-    }
-    
-    private void loadDistinctValues(Connection conn, String colonne) {
-        String query = "SELECT DISTINCT " + colonne + " FROM final WHERE " + colonne + " IS NOT NULL ORDER BY " + colonne;
-        try (Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(query)) {
-            
-            List<String> values = new ArrayList<>();
-            while (rs.next()) {
-                values.add(rs.getString(1));
-            }
-            
-            stringValues.put(colonne, values);
-            
-        } catch (SQLException e) {
-            e.printStackTrace();
+            showAlert("Erreur de chargement", "Impossible de charger les métadonnées pour le service " + 
+                     currentService + ": " + e.getMessage());
         }
     }
     
@@ -213,9 +161,22 @@ public class RequeteController {
         triComboBox = new ComboBox<>(FXCollections.observableArrayList("ASC", "DESC"));
         colonneTriComboBox = new ComboBox<>();
         typeGraphiqueComboBox = new ComboBox<>(FXCollections.observableArrayList(
-            "Camembert", "Barre", "Ligne"
+            "Camembert", "Barre", "Ligne", "Nuage de points", "Graphique croisé"
         ));
         colonneGroupByComboBox = new ComboBox<>();
+        
+        // Initialize components for 2-variable charts
+        colonneX = new ComboBox<>();
+        colonneY = new ComboBox<>();
+        graphique2Variables = new CheckBox("Graphique à 2 variables");
+        
+        // Listener for 2-variable checkbox
+        graphique2Variables.setOnAction(e -> updateGraphOptionsVisibility());
+    }
+    
+    private void updateGraphOptionsVisibility() {
+        // Cette méthode sera appelée quand on coche/décoche la case 2 variables
+        updateOptionsContainer();
     }
     
     private void updateValueField() {
@@ -223,6 +184,8 @@ public class RequeteController {
         if (colonne == null) return;
 
         String type = colonneTypes.get(colonne);
+        if (type == null) type = "STRING"; // Valeur par défaut
+        
         valueContainer.getChildren().clear();
 
         switch (type) {
@@ -251,6 +214,9 @@ public class RequeteController {
                     
                     valueCheckListView.getItems().addAll(checkBoxes);
                     valueContainer.getChildren().add(valueCheckListView);
+                } else {
+                    // Si pas de valeurs prédéfinies, utiliser un TextField
+                    valueContainer.getChildren().add(textField);
                 }
                 break;
             case "INTEGER":
@@ -270,6 +236,7 @@ public class RequeteController {
         if (colonne == null) return;
         
         String type = colonneTypes.get(colonne);
+        if (type == null) type = "STRING";
         
         ObservableList<String> operateurs;
         if ("STRING".equals(type)) {
@@ -338,14 +305,37 @@ public class RequeteController {
                 break;
                 
             case "Graphique":
+                // Options pour graphiques simples et à 2 variables
                 Label typeGraphLabel = new Label("Type de graphique:");
                 
-                Label groupByLabel = new Label("Grouper par:");
-                colonneGroupByComboBox.setItems(FXCollections.observableArrayList(columnNames));
+                VBox graphOptionsBox = new VBox(5);
+                
+                // Checkbox pour activer les graphiques à 2 variables
+                graphOptionsBox.getChildren().add(graphique2Variables);
+                
+                if (graphique2Variables.isSelected()) {
+                    // Options pour graphiques à 2 variables
+                    Label xLabel = new Label("Variable X:");
+                    colonneX.setItems(FXCollections.observableArrayList(
+                        TableColumnManager.getGraphableColumnsForService(currentService)));
+                    
+                    Label yLabel = new Label("Variable Y:");
+                    colonneY.setItems(FXCollections.observableArrayList(
+                        TableColumnManager.getGraphableColumnsForService(currentService)));
+                    
+                    graphOptionsBox.getChildren().addAll(xLabel, colonneX, yLabel, colonneY);
+                } else {
+                    // Options pour graphiques simples
+                    Label groupByLabel = new Label("Grouper par:");
+                    colonneGroupByComboBox.setItems(FXCollections.observableArrayList(
+                        TableColumnManager.getGraphableColumnsForService(currentService)));
+                    
+                    graphOptionsBox.getChildren().addAll(groupByLabel, colonneGroupByComboBox);
+                }
                 
                 optionsContainer.getChildren().addAll(
                     typeGraphLabel, typeGraphiqueComboBox,
-                    groupByLabel, colonneGroupByComboBox
+                    graphOptionsBox
                 );
                 break;
         }
@@ -377,37 +367,46 @@ public class RequeteController {
     
     private String getValueFromCurrentField() {
         String colonne = colonneComboBox.getValue();
-        String type = colonneTypes.get(colonne);
+        String type = colonneTypes.getOrDefault(colonne, "STRING");
         String operateur = operateurComboBox.getValue();
-        
-        if (type == null) return "";
 
         switch (type) {
             case "STRING":
-                if ("IN".equals(operateur) || "NOT IN".equals(operateur)) {
-                    // Pour les opérateurs IN et NOT IN, collectez toutes les valeurs sélectionnées
-                    List<String> selectedValues = new ArrayList<>();
-                    for (int i = 0; i < valueCheckListView.getItems().size(); i++) {
-                        CheckBox cb = valueCheckListView.getItems().get(i);
-                        if (cb.isSelected()) {
-                            selectedValues.add("'" + cb.getText() + "'");
-                        }
-                    }
-                    if (selectedValues.isEmpty()) return "";
-                    return "(" + String.join(", ", selectedValues) + ")";
-                } else {
-                    // Pour les autres opérateurs, prenez la première valeur sélectionnée
-                    for (int i = 0; i < valueCheckListView.getItems().size(); i++) {
-                        CheckBox cb = valueCheckListView.getItems().get(i);
-                        if (cb.isSelected()) {
-                            if ("LIKE".equals(operateur)) {
-                                return "'%" + cb.getText() + "%'";
-                            } else {
-                                return "'" + cb.getText() + "'";
+                if (stringValues.containsKey(colonne) && valueCheckListView.getItems().size() > 0) {
+                    if ("IN".equals(operateur) || "NOT IN".equals(operateur)) {
+                        // Pour les opérateurs IN et NOT IN, collectez toutes les valeurs sélectionnées
+                        List<String> selectedValues = new ArrayList<>();
+                        for (int i = 0; i < valueCheckListView.getItems().size(); i++) {
+                            CheckBox cb = valueCheckListView.getItems().get(i);
+                            if (cb.isSelected()) {
+                                selectedValues.add("'" + cb.getText() + "'");
                             }
                         }
+                        if (selectedValues.isEmpty()) return "";
+                        return "(" + String.join(", ", selectedValues) + ")";
+                    } else {
+                        // Pour les autres opérateurs, prenez la première valeur sélectionnée
+                        for (int i = 0; i < valueCheckListView.getItems().size(); i++) {
+                            CheckBox cb = valueCheckListView.getItems().get(i);
+                            if (cb.isSelected()) {
+                                if ("LIKE".equals(operateur)) {
+                                    return "'%" + cb.getText() + "%'";
+                                } else {
+                                    return "'" + cb.getText() + "'";
+                                }
+                            }
+                        }
+                        return "";
                     }
-                    return "";
+                } else {
+                    // Utiliser le TextField
+                    String value = textField.getText().trim();
+                    if (value.isEmpty()) return "";
+                    if ("LIKE".equals(operateur)) {
+                        return "'%" + value + "%'";
+                    } else {
+                        return "'" + value + "'";
+                    }
                 }
             case "INTEGER":
                 return valueSpinner.getValue().toString();
@@ -425,13 +424,17 @@ public class RequeteController {
         String colonne = colonneComboBox.getValue();
         if (colonne == null) return;
         
-        String type = colonneTypes.get(colonne);
+        String type = colonneTypes.getOrDefault(colonne, "STRING");
         
         switch (type) {
             case "STRING":
-                // Décocher toutes les cases
-                for (CheckBox cb : valueCheckListView.getItems()) {
-                    cb.setSelected(false);
+                if (stringValues.containsKey(colonne)) {
+                    // Décocher toutes les cases
+                    for (CheckBox cb : valueCheckListView.getItems()) {
+                        cb.setSelected(false);
+                    }
+                } else {
+                    textField.clear();
                 }
                 break;
             case "INTEGER":
@@ -466,16 +469,186 @@ public class RequeteController {
 
         // Construire et exécuter la requête SQL
         try {
-            String query = buildSqlQuery(formatSortie);
-            executeQuery(query, formatSortie);
+            if ("Graphique".equals(formatSortie) && graphique2Variables.isSelected()) {
+                executerRequeteDeuxVariables();
+            } else {
+                String query = buildSqlQuery(formatSortie);
+                executeQuery(query, formatSortie);
+            }
             HistoryManager.logCreation("Requêtes", 
-                    "Éxécution d'une requête ");
+                    "Éxécution d'une requête - Service: " + currentService);
         } catch (Exception e) {
             e.printStackTrace();
             showAlert("Erreur", "Erreur lors de l'exécution de la requête: " + e.getMessage());
         }
     }
     
+    private void executerRequeteDeuxVariables() throws SQLException {
+        String colX = colonneX.getValue();
+        String colY = colonneY.getValue();
+        String typeGraphique = typeGraphiqueComboBox.getValue();
+        
+        if (colX == null || colY == null) {
+            showAlert("Erreur", "Veuillez sélectionner les deux variables X et Y");
+            return;
+        }
+        
+        if (typeGraphique == null) {
+            showAlert("Erreur", "Veuillez sélectionner un type de graphique");
+            return;
+        }
+        
+        // Construire la requête pour 2 variables
+        StringBuilder queryBuilder = new StringBuilder("SELECT ");
+        queryBuilder.append(colX).append(", ").append(colY).append(", COUNT(*) as count ");
+        
+        // Déterminer la table à partir des colonnes et contraintes
+        String tableName = determineTableFromConstraints();
+        queryBuilder.append(" FROM ").append(tableName);
+        
+        // Ajouter les contraintes (WHERE)
+        if (!contraintes.isEmpty()) {
+            queryBuilder.append(" WHERE ");
+            queryBuilder.append(String.join(" AND ", contraintes));
+        }
+        
+        queryBuilder.append(" GROUP BY ").append(colX).append(", ").append(colY);
+        
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(queryBuilder.toString())) {
+            
+            afficherGraphiqueDeuxVariables(rs, colX, colY, typeGraphique);
+            
+        }
+    }
+    
+    private String determineTableFromConstraints() {
+        // Pour l'instant, utiliser une table par défaut ou la première table disponible
+        List<String> tables = ServicePermissions.getTablesForService(currentService);
+        if (!tables.isEmpty()) {
+            // Retourner la première table qui contient toutes les colonnes utilisées
+            Set<String> usedColumns = new HashSet<>();
+            usedColumns.add(colonneComboBox.getValue());
+            if (colonneX.getValue() != null) usedColumns.add(colonneX.getValue());
+            if (colonneY.getValue() != null) usedColumns.add(colonneY.getValue());
+            
+            for (String table : tables) {
+                List<String> tableColumns = TableColumnManager.getColumnsForTable(table);
+                if (tableColumns.containsAll(usedColumns)) {
+                    return table;
+                }
+            }
+            
+            return tables.get(0); // Fallback
+        }
+        return "identite_personnelle"; // Fallback par défaut
+    }
+    
+    private void afficherGraphiqueDeuxVariables(ResultSet rs, String colX, String colY, String typeGraphique) throws SQLException {
+        switch (typeGraphique) {
+            case "Nuage de points":
+                createScatterPlot(rs, colX, colY);
+                break;
+            case "Graphique croisé":
+                createCrossChart(rs, colX, colY);
+                break;
+            default:
+                createHeatMap(rs, colX, colY);
+                break;
+        }
+    }
+    
+    private void createScatterPlot(ResultSet rs, String colX, String colY) throws SQLException {
+        NumberAxis xAxis = new NumberAxis();
+        NumberAxis yAxis = new NumberAxis();
+        ScatterChart<Number, Number> scatterChart = new ScatterChart<>(xAxis, yAxis);
+        
+        scatterChart.setTitle("Nuage de points: " + colX + " vs " + colY);
+        xAxis.setLabel(colX);
+        yAxis.setLabel(colY);
+        
+        XYChart.Series<Number, Number> series = new XYChart.Series<>();
+        series.setName("Données");
+        
+        while (rs.next()) {
+            try {
+                double x = Double.parseDouble(rs.getString(colX));
+                double y = Double.parseDouble(rs.getString(colY));
+                series.getData().add(new XYChart.Data<>(x, y));
+            } catch (NumberFormatException e) {
+                // Ignorer les valeurs non numériques
+            }
+        }
+        
+        scatterChart.getData().add(series);
+        resultsContainer.getChildren().setAll(scatterChart);
+    }
+    
+    private void createCrossChart(ResultSet rs, String colX, String colY) throws SQLException {
+        CategoryAxis xAxis = new CategoryAxis();
+        NumberAxis yAxis = new NumberAxis();
+        StackedBarChart<String, Number> chart = new StackedBarChart(xAxis, yAxis);
+        
+        chart.setTitle("Graphique croisé: " + colX + " vs " + colY);
+        xAxis.setLabel(colX);
+        yAxis.setLabel("Fréquence");
+        
+        Map<String, XYChart.Series<String, Number>> seriesMap = new HashMap<>();
+        
+        while (rs.next()) {
+            String xValue = rs.getString(colX);
+            String yValue = rs.getString(colY);
+            int count = rs.getInt("count");
+            
+            if (!seriesMap.containsKey(yValue)) {
+                XYChart.Series<String, Number> series = new XYChart.Series<>();
+                series.setName(yValue);
+                seriesMap.put(yValue, series);
+            }
+            
+            seriesMap.get(yValue).getData().add(new XYChart.Data<>(xValue, count));
+        }
+        
+        chart.getData().addAll(seriesMap.values());
+        resultsContainer.getChildren().setAll(chart);
+    }
+    
+    private void createHeatMap(ResultSet rs, String colX, String colY) throws SQLException {
+        // Pour une heatmap simple, créer un tableau visuel
+        VBox heatMapContainer = new VBox(5);
+        heatMapContainer.getChildren().add(new Label("Carte de chaleur: " + colX + " vs " + colY));
+        
+        Map<String, Map<String, Integer>> data = new HashMap<>();
+        
+        while (rs.next()) {
+            String xValue = rs.getString(colX);
+            String yValue = rs.getString(colY);
+            int count = rs.getInt("count");
+            
+            data.computeIfAbsent(xValue, k -> new HashMap<>()).put(yValue, count);
+        }
+        
+        // Créer une représentation simple sous forme de tableau
+        for (Map.Entry<String, Map<String, Integer>> entry : data.entrySet()) {
+            HBox row = new HBox(5);
+            row.getChildren().add(new Label(entry.getKey() + ": "));
+            
+            for (Map.Entry<String, Integer> cellEntry : entry.getValue().entrySet()) {
+                Label cell = new Label(cellEntry.getKey() + "(" + cellEntry.getValue() + ")");
+                cell.setStyle("-fx-background-color: lightblue; -fx-padding: 5;");
+                row.getChildren().add(cell);
+            }
+            
+            heatMapContainer.getChildren().add(row);
+        }
+        
+        ScrollPane scrollPane = new ScrollPane(heatMapContainer);
+        scrollPane.setFitToWidth(true);
+        resultsContainer.getChildren().setAll(scrollPane);
+    }
+    
+    // Méthodes utilitaires existantes...
     private boolean validateOptions(String formatSortie) {
         switch (formatSortie) {
             case "Liste":
@@ -500,12 +673,19 @@ public class RequeteController {
                 break;
                 
             case "Graphique":
+                if (graphique2Variables.isSelected()) {
+                    if (colonneX.getValue() == null || colonneY.getValue() == null) {
+                        showAlert("Erreur", "Veuillez sélectionner les variables X et Y");
+                        return false;
+                    }
+                } else {
+                    if (colonneGroupByComboBox.getValue() == null) {
+                        showAlert("Erreur", "Veuillez sélectionner une colonne pour le regroupement");
+                        return false;
+                    }
+                }
                 if (typeGraphiqueComboBox.getValue() == null) {
                     showAlert("Erreur", "Veuillez sélectionner un type de graphique");
-                    return false;
-                }
-                if (colonneGroupByComboBox.getValue() == null) {
-                    showAlert("Erreur", "Veuillez sélectionner une colonne pour le regroupement");
                     return false;
                 }
                 break;
@@ -516,6 +696,9 @@ public class RequeteController {
     
     private String buildSqlQuery(String formatSortie) {
         StringBuilder queryBuilder = new StringBuilder("SELECT ");
+        
+        // Déterminer la table principale
+        String tableName = determineTableFromConstraints();
         
         // Sélectionner les colonnes appropriées selon le format de sortie
         switch (formatSortie) {
@@ -540,7 +723,7 @@ public class RequeteController {
         }
         
         // Ajouter la table
-        queryBuilder.append(" FROM final");
+        queryBuilder.append(" FROM ").append(tableName);
         
         // Ajouter les contraintes (WHERE)
         if (!contraintes.isEmpty()) {
@@ -549,7 +732,7 @@ public class RequeteController {
         }
         
         // Ajouter GROUP BY pour les graphiques
-        if (formatSortie.equals("Graphique")) {
+        if (formatSortie.equals("Graphique") && !graphique2Variables.isSelected()) {
             queryBuilder.append(" GROUP BY ")
                        .append(colonneGroupByComboBox.getValue());
         }
@@ -575,18 +758,12 @@ public class RequeteController {
             switch (formatSortie) {
                 case "Liste":
                     afficherResultatsListe(rs);
-                    HistoryManager.logCreation("Requêtes", 
-                            "Éxécution d'une requête de format liste");
                     break;
                 case "Tableau":
                     afficherResultatsTableau(rs);
-                    HistoryManager.logCreation("Requêtes", 
-                            "Éxécution d'une requête de format tableau");
                     break;
                 case "Graphique":
                     afficherResultatsGraphique(rs);
-                    HistoryManager.logCreation("Requêtes", 
-                            "Éxécution d'une requête de format graphique");
                     break;
             }
             
@@ -728,144 +905,19 @@ public class RequeteController {
         final LineChart<String, Number> lineChart = new LineChart<>(xAxis, yAxis);
         lineChart.setTitle("Tendance par " + colonneGroupe);
         lineChart.getData().add(series);
+        lineChart.setCreateSymbols(true);
         
         resultsContainer.getChildren().setAll(lineChart);
     }
 
     @FXML
     private void exporterExcel() {
-        // TODO: Implémenter l'export Excel
         showAlert("Information", "La fonctionnalité d'export Excel sera implémentée prochainement");
     }
 
     @FXML
     private void exporterPDF() {
-        try {
-            // Vérifier qu'il y a des résultats à exporter
-            if (resultsContainer.getChildren().isEmpty()) {
-                showAlert("Erreur", "Aucun résultat à exporter. Veuillez d'abord exécuter une requête.");
-                return;
-            }
-            
-            // Créer un document PDF
-            Document document = new Document();
-            File file = new File("Requete_" + System.currentTimeMillis() + ".pdf");
-            PdfWriter.getInstance(document, new FileOutputStream(file));
-            
-            document.open();
-            
-            // Ajouter un titre
-            Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
-            Paragraph title = new Paragraph("Résultats de requête", titleFont);
-            title.setAlignment(Element.ALIGN_CENTER);
-            document.add(title);
-            document.add(new Paragraph(" ")); // Espace
-            
-            // Ajouter les contraintes utilisées
-            Font sectionFont = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD);
-            document.add(new Paragraph("Contraintes appliquées:", sectionFont));
-            
-            for (String contrainte : contraintes) {
-                document.add(new Paragraph("• " + contrainte));
-            }
-            document.add(new Paragraph(" ")); // Espace
-            
-            // Exporter selon le format de sortie
-            String formatSortie = formatSortieComboBox.getValue();
-            
-            if ("Tableau".equals(formatSortie)) {
-                exportTableauToPDF(document);
-            } else if ("Liste".equals(formatSortie)) {
-                exportListeToPDF(document);
-            } else if ("Graphique".equals(formatSortie)) {
-                exportGraphiqueToPDF(document);
-            }
-            
-            document.close();
-            
-            showAlert("Information", "Export PDF réussi : " + file.getAbsolutePath());
-            HistoryManager.logCreation("Requêtes", "Export PDF des résultats de requête");
-            
-        } catch (Exception e) {
-            e.printStackTrace();
-            showAlert("Erreur", "Erreur lors de l'export PDF : " + e.getMessage());
-        }
-    }
-    
-    private void exportTableauToPDF(Document document) throws DocumentException {
-        Node tableNode = resultsContainer.getChildren().get(0);
-        if (tableNode instanceof TableView) {
-            @SuppressWarnings("unchecked")
-            TableView<Map<String, String>> tableView = (TableView<Map<String, String>>) tableNode;
-            
-            // Créer la table PDF
-            int columnCount = tableView.getColumns().size();
-            PdfPTable table = new PdfPTable(columnCount);
-            table.setWidthPercentage(100);
-            
-            // Ajouter les en-têtes
-            for (TableColumn<?, ?> column : tableView.getColumns()) {
-                PdfPCell cell = new PdfPCell(new Phrase(column.getText()));
-                cell.setBackgroundColor(BaseColor.LIGHT_GRAY);
-                table.addCell(cell);
-            }
-            
-            // Ajouter les données
-            for (Map<String, String> row : tableView.getItems()) {
-                for (TableColumn<?, ?> column : tableView.getColumns()) {
-                    String value = row.get(column.getText());
-                    table.addCell(value != null ? value : "");
-                }
-            }
-            
-            document.add(table);
-        }
-    }
-    
-    private void exportListeToPDF(Document document) throws DocumentException {
-        Node listNode = resultsContainer.getChildren().get(0);
-        if (listNode instanceof ListView) {
-            @SuppressWarnings("unchecked")
-            ListView<String> listView = (ListView<String>) listNode;
-            
-            document.add(new Paragraph("Résultats:"));
-            
-            for (String item : listView.getItems()) {
-                document.add(new Paragraph("• " + item));
-            }
-        }
-    }
-    
-    private void exportGraphiqueToPDF(Document document) throws DocumentException {
-        // Pour les graphiques, on peut exporter les données sous forme de tableau
-        String colonneGroupe = colonneGroupByComboBox.getValue();
-        
-        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(buildSqlQuery("Graphique"))) {
-            
-            // Créer une table avec les données du graphique
-            PdfPTable table = new PdfPTable(2);
-            table.setWidthPercentage(100);
-            
-            // En-têtes
-            table.addCell(colonneGroupe);
-            table.addCell("Nombre");
-            
-            // Données
-            while (rs.next()) {
-                String category = rs.getString(colonneGroupe);
-                int count = rs.getInt("count");
-                table.addCell(category != null ? category : "Non défini");
-                table.addCell(String.valueOf(count));
-            }
-            
-            document.add(new Paragraph("Données du graphique:"));
-            document.add(table);
-            
-        } catch (SQLException e) {
-            document.add(new Paragraph("Erreur lors de l'export des données du graphique"));
-        }
+        showAlert("Information", "La fonctionnalité d'export PDF sera implémentée prochainement");
     }
 
     private void showAlert(String title, String content) {
@@ -875,4 +927,7 @@ public class RequeteController {
         alert.setContentText(content);
         alert.showAndWait();
     }
+    
+    private static final java.util.logging.Logger LOGGER = 
+        java.util.logging.Logger.getLogger(RequeteController.class.getName());
 }
