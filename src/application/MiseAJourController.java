@@ -9,8 +9,8 @@ import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
-import javafx.scene.Scene;
 import javafx.stage.Modality;
+import javafx.scene.Scene;
 
 import java.io.*;
 import java.sql.*;
@@ -61,7 +61,6 @@ public class MiseAJourController {
         validateSchemaButton.setDisable(true);
         startUpdateButton.setDisable(true);
         
-        // Ajouter les nouveaux boutons d'aide
         setupHelpButtons();
     }
     
@@ -470,6 +469,7 @@ public class MiseAJourController {
                         statusLabel.setText("Mise à jour terminée avec succès!");
                     }
                     
+                    // CORRECTION : Forcer le rechargement de l'historique
                     loadUpdateHistory();
                     updateTableInfo();
                     setControlsDisabled(false);
@@ -496,6 +496,7 @@ public class MiseAJourController {
                         currentService
                     );
                     
+                    // CORRECTION : Recharger l'historique même en cas d'échec
                     loadUpdateHistory();
                 });
             }
@@ -505,9 +506,28 @@ public class MiseAJourController {
         updateThread.start();
     }
     
+    // CORRECTION : Améliorer la méthode de chargement de l'historique
     private void loadUpdateHistory() {
-        List<EnhancedUpdateRecord> updates = EnhancedDatabaseManager.getEnhancedUpdateHistory();
-        updatesTable.setItems(FXCollections.observableArrayList(updates));
+        try {
+            // Forcer un délai pour s'assurer que l'enregistrement est bien en base
+            Platform.runLater(() -> {
+                try {
+                    // Récupérer l'historique mis à jour
+                    List<EnhancedUpdateRecord> updates = EnhancedDatabaseManager.getEnhancedUpdateHistory();
+                    
+                    // Mettre à jour la table
+                    updatesTable.setItems(FXCollections.observableArrayList(updates));
+                    updatesTable.refresh();
+                    
+                    LOGGER.info("Historique rechargé: " + updates.size() + " enregistrements");
+                    
+                } catch (Exception e) {
+                    LOGGER.log(Level.SEVERE, "Erreur lors du rechargement de l'historique", e);
+                }
+            });
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors du chargement de l'historique", e);
+        }
     }
     
     private EnhancedUpdateRecord getLastUpdateForTable(String tableName) {

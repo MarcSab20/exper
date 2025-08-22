@@ -107,12 +107,12 @@ public class RequeteController {
     }
     
     /**
-     * Charge les métadonnées spécifiques au service actuel
+     * Charge les métadonnées spécifiques au service actuel avec support multi-tables
      */
     private void loadServiceMetadata() {
         try {
-            // Obtenir les colonnes disponibles pour ce service
-            columnNames = TableColumnManager.getAvailableColumnsForService(currentService);
+            // NOUVEAU: Utiliser le gestionnaire multi-tables pour obtenir toutes les colonnes disponibles
+            columnNames = MultiTableQueryManager.getAvailableColumnsWithTables(currentService);
             
             // Obtenir les types des colonnes
             colonneTypes = TableColumnManager.getColumnTypesForService(currentService);
@@ -124,7 +124,7 @@ public class RequeteController {
             colonneComboBox.setItems(FXCollections.observableArrayList(columnNames));
             
             LOGGER.info("Métadonnées chargées pour le service " + currentService + 
-                       ": " + columnNames.size() + " colonnes disponibles");
+                       ": " + columnNames.size() + " colonnes disponibles (multi-tables)");
             
         } catch (Exception e) {
             e.printStackTrace();
@@ -471,19 +471,76 @@ public class RequeteController {
             return;
         }
 
-        // Construire et exécuter la requête SQL
+        // NOUVEAU: Construire et exécuter la requête multi-tables
         try {
             if ("Graphique".equals(formatSortie) && graphique2Variables.isSelected()) {
                 executerRequeteDeuxVariables();
             } else {
-                String query = buildSqlQuery(formatSortie);
-                executeQuery(query, formatSortie);
+                executeMultiTableQuery(formatSortie);
             }
             HistoryManager.logCreation("Requêtes", 
-                    "Éxécution d'une requête - Service: " + currentService);
+                    "Éxécution d'une requête multi-tables - Service: " + currentService);
         } catch (Exception e) {
             e.printStackTrace();
             showAlert("Erreur", "Erreur lors de l'exécution de la requête: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * NOUVELLE MÉTHODE: Exécute une requête multi-tables
+     */
+    private void executeMultiTableQuery(String formatSortie) throws SQLException {
+        // Déterminer les colonnes utilisées
+        List<String> usedColumns = new ArrayList<>();
+        
+        switch (formatSortie) {
+            case "Liste":
+                usedColumns.add(colonneAffichageComboBox.getValue());
+                break;
+            case "Tableau":
+                for (CheckBox cb : selectedColumnsCheckBoxes) {
+                    if (cb.isSelected()) {
+                        usedColumns.add(cb.getText());
+                    }
+                }
+                break;
+            case "Graphique":
+                usedColumns.add(colonneGroupByComboBox.getValue());
+                break;
+        }
+        
+        // Construire la requête multi-tables
+        MultiTableQueryManager.QueryInfo queryInfo = 
+            MultiTableQueryManager.buildMultiTableQuery(usedColumns, contraintes, currentService, formatSortie);
+        
+        String query = queryInfo.getQuery();
+        
+        // Ajouter ORDER BY si nécessaire
+        if ((formatSortie.equals("Liste") || formatSortie.equals("Tableau")) 
+                && colonneTriComboBox.getValue() != null 
+                && triComboBox.getValue() != null) {
+            query += " ORDER BY " + colonneTriComboBox.getValue() + " " + triComboBox.getValue();
+        }
+        
+        LOGGER.info("Requête multi-tables générée: " + query);
+        LOGGER.info("Tables utilisées: " + String.join(", ", queryInfo.getUsedTables()));
+        
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+            
+            switch (formatSortie) {
+                case "Liste":
+                    afficherResultatsListe(rs);
+                    break;
+                case "Tableau":
+                    afficherResultatsTableau(rs);
+                    break;
+                case "Graphique":
+                    afficherResultatsGraphique(rs);
+                    break;
+            }
+            
         }
     }
     
@@ -502,51 +559,22 @@ public class RequeteController {
             return;
         }
         
-        // Construire la requête pour 2 variables
-        StringBuilder queryBuilder = new StringBuilder("SELECT ");
-        queryBuilder.append(colX).append(", ").append(colY).append(", COUNT(*) as count ");
+        // NOUVEAU: Utiliser le gestionnaire multi-tables pour les graphiques 2D
+        List<String> usedColumns = Arrays.asList(colX, colY);
+        MultiTableQueryManager.QueryInfo queryInfo = 
+            MultiTableQueryManager.buildMultiTableQuery(usedColumns, contraintes, currentService, "Graphique");
         
-        // Déterminer la table à partir des colonnes et contraintes
-        String tableName = determineTableFromConstraints();
-        queryBuilder.append(" FROM ").append(tableName);
+        String query = queryInfo.getQuery();
         
-        // Ajouter les contraintes (WHERE)
-        if (!contraintes.isEmpty()) {
-            queryBuilder.append(" WHERE ");
-            queryBuilder.append(String.join(" AND ", contraintes));
-        }
-        
-        queryBuilder.append(" GROUP BY ").append(colX).append(", ").append(colY);
+        LOGGER.info("Requête 2D multi-tables générée: " + query);
         
         try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
              Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(queryBuilder.toString())) {
+             ResultSet rs = stmt.executeQuery(query)) {
             
             afficherGraphiqueDeuxVariables(rs, colX, colY, typeGraphique);
             
         }
-    }
-    
-    private String determineTableFromConstraints() {
-        // Pour l'instant, utiliser une table par défaut ou la première table disponible
-        List<String> tables = ServicePermissions.getTablesForService(currentService);
-        if (!tables.isEmpty()) {
-            // Retourner la première table qui contient toutes les colonnes utilisées
-            Set<String> usedColumns = new HashSet<>();
-            usedColumns.add(colonneComboBox.getValue());
-            if (colonneX.getValue() != null) usedColumns.add(colonneX.getValue());
-            if (colonneY.getValue() != null) usedColumns.add(colonneY.getValue());
-            
-            for (String table : tables) {
-                List<String> tableColumns = TableColumnManager.getColumnsForTable(table);
-                if (tableColumns.containsAll(usedColumns)) {
-                    return table;
-                }
-            }
-            
-            return tables.get(0); // Fallback
-        }
-        return "identite_personnelle"; // Fallback par défaut
     }
     
     private void afficherGraphiqueDeuxVariables(ResultSet rs, String colX, String colY, String typeGraphique) throws SQLException {
@@ -696,85 +724,6 @@ public class RequeteController {
         }
         
         return true;
-    }
-    
-    private String buildSqlQuery(String formatSortie) {
-        StringBuilder queryBuilder = new StringBuilder("SELECT ");
-        
-        // Déterminer la table principale
-        String tableName = determineTableFromConstraints();
-        
-        // Sélectionner les colonnes appropriées selon le format de sortie
-        switch (formatSortie) {
-            case "Liste":
-                queryBuilder.append(colonneAffichageComboBox.getValue());
-                break;
-                
-            case "Tableau":
-                List<String> selectedColumns = new ArrayList<>();
-                for (CheckBox cb : selectedColumnsCheckBoxes) {
-                    if (cb.isSelected()) {
-                        selectedColumns.add(cb.getText());
-                    }
-                }
-                queryBuilder.append(String.join(", ", selectedColumns));
-                break;
-                
-            case "Graphique":
-                queryBuilder.append("COUNT(*) AS count, ")
-                           .append(colonneGroupByComboBox.getValue());
-                break;
-        }
-        
-        // Ajouter la table
-        queryBuilder.append(" FROM ").append(tableName);
-        
-        // Ajouter les contraintes (WHERE)
-        if (!contraintes.isEmpty()) {
-            queryBuilder.append(" WHERE ");
-            queryBuilder.append(String.join(" AND ", contraintes));
-        }
-        
-        // Ajouter GROUP BY pour les graphiques
-        if (formatSortie.equals("Graphique") && !graphique2Variables.isSelected()) {
-            queryBuilder.append(" GROUP BY ")
-                       .append(colonneGroupByComboBox.getValue());
-        }
-        
-        // Ajouter ORDER BY si spécifié
-        if ((formatSortie.equals("Liste") || formatSortie.equals("Tableau")) 
-                && colonneTriComboBox.getValue() != null 
-                && triComboBox.getValue() != null) {
-            queryBuilder.append(" ORDER BY ")
-                       .append(colonneTriComboBox.getValue())
-                       .append(" ")
-                       .append(triComboBox.getValue());
-        }
-        
-        return queryBuilder.toString();
-    }
-    
-    private void executeQuery(String query, String formatSortie) {
-        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(query)) {
-            
-            switch (formatSortie) {
-                case "Liste":
-                    afficherResultatsListe(rs);
-                    break;
-                case "Tableau":
-                    afficherResultatsTableau(rs);
-                    break;
-                case "Graphique":
-                    afficherResultatsGraphique(rs);
-                    break;
-            }
-            
-        } catch (SQLException e) {
-            e.printStackTrace();
-            showAlert("Erreur", "Erreur SQL: " + e.getMessage());
-        }
     }
 
     private void afficherResultatsTableau(ResultSet rs) throws SQLException {
@@ -932,7 +881,7 @@ public class RequeteController {
         fileChooser.getExtensionFilters().add(
             new FileChooser.ExtensionFilter("Fichiers PDF", "*.pdf")
         );
-        fileChooser.setInitialFileName("Rapport_Requete_" + 
+        fileChooser.setInitialFileName("Rapport_Requete_MultiTables_" + 
             LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf");
         
         Stage stage = (Stage) resultsContainer.getScene().getWindow();
@@ -943,7 +892,7 @@ public class RequeteController {
                 exportToPDF(file);
                 showAlert("Succès", "Le rapport PDF a été généré avec succès dans :\n" + file.getAbsolutePath());
                 HistoryManager.logCreation("Requêtes", 
-                        "Export PDF d'une requête - Service: " + currentService);
+                        "Export PDF d'une requête multi-tables - Service: " + currentService);
             } catch (Exception e) {
                 e.printStackTrace();
                 showAlert("Erreur", "Erreur lors de la génération du PDF: " + e.getMessage());
@@ -959,7 +908,7 @@ public class RequeteController {
         
         // Titre
         Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
-        Paragraph title = new Paragraph("Rapport de Requête - " + currentService, titleFont);
+        Paragraph title = new Paragraph("Rapport de Requête Multi-Tables - " + currentService, titleFont);
         title.setAlignment(Element.ALIGN_CENTER);
         document.add(title);
         

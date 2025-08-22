@@ -45,7 +45,7 @@ public class EnhancedDatabaseManager extends DatabaseManager {
     }
     
     /**
-     * Enregistre une mise à jour améliorée dans l'historique
+     * CORRECTION: Enregistre une mise à jour améliorée dans l'historique avec transaction
      */
     public static int logEnhancedUpdate(String tableName, String status, String description, 
                                        int recordsInserted, int recordsUpdated, int recordsUnchanged,
@@ -54,40 +54,57 @@ public class EnhancedDatabaseManager extends DatabaseManager {
                      "(tableName, status, description, recordsInserted, recordsUpdated, recordsUnchanged, service, user) " +
                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try (Connection conn = getConnection()) {
+            // CORRECTION: Utiliser une transaction pour s'assurer de la cohérence
+            conn.setAutoCommit(false);
             
-            stmt.setString(1, tableName);
-            stmt.setString(2, status);
-            stmt.setString(3, description);
-            stmt.setInt(4, recordsInserted);
-            stmt.setInt(5, recordsUpdated);
-            stmt.setInt(6, recordsUnchanged);
-            stmt.setString(7, service);
-            stmt.setString(8, getCurrentUser());
-            
-            int affectedRows = stmt.executeUpdate();
-            
-            if (affectedRows == 0) {
-                throw new SQLException("L'enregistrement de la mise à jour a échoué");
-            }
-            
-            try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
-                if (generatedKeys.next()) {
-                    int updateId = generatedKeys.getInt(1);
-                    
-                    // Enregistrer aussi dans l'historique des modifications pour compatibilité
-                    String detailsModification = String.format(
-                        "Mise à jour CSV #%d: %d insertions, %d modifications, %d inchangés",
-                        updateId, recordsInserted, recordsUpdated, recordsUnchanged
-                    );
-                    
-                    logModification(tableName, "Mise à jour CSV", getCurrentUser(), detailsModification);
-                    
-                    return updateId;
-                } else {
-                    throw new SQLException("L'enregistrement de la mise à jour a échoué, aucun ID obtenu");
+            try (PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                
+                stmt.setString(1, tableName);
+                stmt.setString(2, status);
+                stmt.setString(3, description);
+                stmt.setInt(4, recordsInserted);
+                stmt.setInt(5, recordsUpdated);
+                stmt.setInt(6, recordsUnchanged);
+                stmt.setString(7, service);
+                stmt.setString(8, getCurrentUser());
+                
+                int affectedRows = stmt.executeUpdate();
+                
+                if (affectedRows == 0) {
+                    throw new SQLException("L'enregistrement de la mise à jour a échoué");
                 }
+                
+                int updateId = -1;
+                try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
+                    if (generatedKeys.next()) {
+                        updateId = generatedKeys.getInt(1);
+                        
+                        // Enregistrer aussi dans l'historique des modifications pour compatibilité
+                        String detailsModification = String.format(
+                            "Mise à jour CSV #%d: %d insertions, %d modifications, %d inchangés",
+                            updateId, recordsInserted, recordsUpdated, recordsUnchanged
+                        );
+                        
+                        logModification(tableName, "Mise à jour CSV", getCurrentUser(), detailsModification);
+                        
+                        // CORRECTION: Valider la transaction
+                        conn.commit();
+                        
+                        LOGGER.info("Mise à jour enregistrée avec succès. ID: " + updateId);
+                        
+                        return updateId;
+                    } else {
+                        throw new SQLException("L'enregistrement de la mise à jour a échoué, aucun ID obtenu");
+                    }
+                }
+                
+            } catch (SQLException e) {
+                // CORRECTION: Rollback en cas d'erreur
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
             }
             
         } catch (SQLException e) {
@@ -97,13 +114,13 @@ public class EnhancedDatabaseManager extends DatabaseManager {
     }
     
     /**
-     * Récupère l'historique complet des mises à jour améliorées
+     * CORRECTION: Récupère l'historique complet des mises à jour améliorées avec ORDER BY
      */
     public static List<EnhancedUpdateRecord> getEnhancedUpdateHistory() {
         List<EnhancedUpdateRecord> updates = new ArrayList<>();
         String sql = "SELECT id, tableName, updateDate, status, description, " +
                      "recordsInserted, recordsUpdated, recordsUnchanged, service, user " +
-                     "FROM historique_mises_a_jour_enhanced ORDER BY updateDate DESC";
+                     "FROM historique_mises_a_jour_enhanced ORDER BY updateDate DESC, id DESC";
         
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
@@ -124,6 +141,8 @@ public class EnhancedDatabaseManager extends DatabaseManager {
                 ));
             }
             
+            LOGGER.info("Historique récupéré: " + updates.size() + " enregistrements");
+            
         } catch (SQLException e) {
             LOGGER.log(Level.SEVERE, "Erreur lors de la récupération de l'historique amélioré", e);
         }
@@ -138,7 +157,7 @@ public class EnhancedDatabaseManager extends DatabaseManager {
         String sql = "SELECT id, tableName, updateDate, status, description, " +
                      "recordsInserted, recordsUpdated, recordsUnchanged, service, user " +
                      "FROM historique_mises_a_jour_enhanced WHERE tableName = ? " +
-                     "ORDER BY updateDate DESC LIMIT 1";
+                     "ORDER BY updateDate DESC, id DESC LIMIT 1";
         
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -177,7 +196,7 @@ public class EnhancedDatabaseManager extends DatabaseManager {
         String sql = "SELECT id, tableName, updateDate, status, description, " +
                      "recordsInserted, recordsUpdated, recordsUnchanged, service, user " +
                      "FROM historique_mises_a_jour_enhanced WHERE service = ? " +
-                     "ORDER BY updateDate DESC";
+                     "ORDER BY updateDate DESC, id DESC";
         
         try (Connection conn = getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -286,7 +305,7 @@ public class EnhancedDatabaseManager extends DatabaseManager {
     }
     
     /**
-     * Obtient l'utilisateur actuel (à adapter selon votre système d'authentification)
+     * CORRECTION: Obtient l'utilisateur actuel (à adapter selon votre système d'authentification)
      */
     private static String getCurrentUser() {
         try {
