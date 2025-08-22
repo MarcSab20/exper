@@ -12,7 +12,7 @@ import java.util.logging.Logger;
  */
 public class CSVProcessor {
     private static final Logger LOGGER = Logger.getLogger(CSVProcessor.class.getName());
-    private static final String CSV_SEPARATOR = ";"; // Séparateur par défaut
+    private static final String CSV_SEPARATOR = ","; // Séparateur par défaut
     
     /**
      * Valide la cohérence entre le fichier CSV et la table de destination
