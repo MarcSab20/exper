@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.text.TextFlow?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.text.Text?>
+
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="application.AccueilRhController"
+      stylesheets="@mainRh.css"
+      styleClass="rh-container"
+      spacing="20">
+
+    <!-- Aperçu RH -->
+    <TitledPane text="Aperçu Ressources Humaines" styleClass="section-pane">
+        <VBox spacing="10">
+            <Label wrapText="true" text="Gestion du personnel et des compétences."/>
+            <TextFlow styleClass="info-text">
+                <Text text="Suivi des effectifs, gestion des carrières et formation du personnel."/>
+            </TextFlow>
+        </VBox>
+    </TitledPane>
+
+    <!-- Effectifs -->
+    <TitledPane text="État des Effectifs" styleClass="section-pane">
+        <TableView fx:id="effectifsTable">
+            <columns>
+                <TableColumn text="Unité" fx:id="uniteColumn"/>
+                <TableColumn text="Effectif Total" fx:id="totalColumn"/>
+                <TableColumn text="Présents" fx:id="presentsColumn"/>
+                <TableColumn text="En Mission" fx:id="enMissionColumn"/>
+            </columns>
+        </TableView>
+    </TitledPane>
+
+    <!-- Formations -->
+    <TitledPane text="Formations en Cours" styleClass="section-pane">
+        <VBox spacing="10">
+            <TableView fx:id="formationsTable">
+                <columns>
+                    <TableColumn text="Formation" fx:id="formationColumn"/>
+                    <TableColumn text="Date Début" fx:id="dateDebutColumn"/>
+                    <TableColumn text="Date Fin" fx:id="dateFinColumn"/>
+                    <TableColumn text="Participants" fx:id="participantsColumn"/>
+                </columns>
+            </TableView>
+        </VBox>
+    </TitledPane>
+
+    <!-- Demandes -->
+    <TitledPane text="Demandes en Attente" styleClass="section-pane">
+        <VBox spacing="10">
+            <ListView fx:id="demandesList" prefHeight="150"/>
+        </VBox>
+    </TitledPane>
+
+</VBox>

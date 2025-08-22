@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.text.TextFlow?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.text.Text?>
+
+
+<ScrollPane xmlns="http://javafx.com/javafx"
+           xmlns:fx="http://javafx.com/fxml"
+           fx:controller="application.AccueilController"
+           stylesheets="@main.css"
+           styleClass="accueil-container">
+    <VBox spacing="20" styleClass="content-box" VBox.vgrow="ALWAYS">
+        <!-- Politique de sécurité -->
+        <TitledPane text="Politique de sécurité" styleClass="section-pane">
+            <VBox spacing="10">
+                <Label wrapText="true" text="Notre politique de sécurité..."/>
+                <TextFlow styleClass="security-text">
+                    <Text text="Voici un paragraphe expliquant notre politique de sécurité."/>
+                </TextFlow>
+            </VBox>
+        </TitledPane>
+
+        <!-- À propos de l'application -->
+        <TitledPane text="À propos de l'application" styleClass="section-pane">
+            <VBox spacing="10" VBox.vgrow="ALWAYS">
+                <Label wrapText="true" text="Cette application permet de réaliser des requêtes sur des bases de données"/>
+            </VBox>
+        </TitledPane>
+
+        <!-- Organigramme remplacé par une ImageView -->
+        <TitledPane text="Organigramme de l'État Major" styleClass="section-pane">
+            <ImageView fx:id="organigrammeView" 
+                       fitHeight="400" 
+                       fitWidth="600">
+                <image>
+                    <Image url="@organigramme.png"/>
+                </image>
+            </ImageView>
+        </TitledPane>
+
+        <!-- Fonctionnalités majeures -->
+        <TitledPane text="Fonctionnalités majeures" styleClass="section-pane">
+            <VBox spacing="10" VBox.vgrow="ALWAYS">
+                <Label styleClass="feature-item" text="• Gestion des personnels"/>
+                <Label styleClass="feature-item" text="• Téléchargements des requêtes"/>
+                <Label styleClass="feature-item" text="• Génération de graphes"/>
+                <Label styleClass="feature-item" text="• Suivi des mises à jour"/>
+            </VBox>
+        </TitledPane>
+
+        <!-- Opérations récentes -->
+        <TitledPane text="Opérations récentes" styleClass="section-pane">
+            <TableView fx:id="recentOperationsTable">
+                <columns>
+                    <TableColumn text="Date" fx:id="dateColumn"/>
+                    <TableColumn text="Opération" fx:id="operationColumn"/>
+                    <TableColumn text="Utilisateur" fx:id="userColumn"/>
+                </columns>
+            </TableView>
+        </TitledPane>
+    </VBox>
+</ScrollPane>

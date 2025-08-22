@@ -1,0 +1,157 @@
+/* Variables de couleurs */
+.root {
+    -fx-primary-color: #2ecc71;
+    -fx-secondary-color: #e74c3c;
+    -fx-accent-color: #f1c40f;
+}
+
+/* Container principal */
+.main-container {
+    -fx-background-color: #f5f5f5;
+}
+
+/* Sidebar */
+.sidebar {
+    -fx-background-color: #2c3e50;
+    -fx-min-width: 250px;
+    -fx-padding: 20px 10px;
+    -fx-spacing: 10px;
+}
+
+.sidebar-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: white;
+    -fx-font-size: 14px;
+    -fx-alignment: CENTER_LEFT;
+    -fx-padding: 15px 20px;
+    -fx-border-width: 0 0 0 5px;
+    -fx-border-color: transparent;
+    -fx-min-width: 230px;
+}
+
+.sidebar-button:hover {
+    -fx-background-color: #34495e;
+    -fx-border-color: linear-gradient(to bottom, #2ecc71, #e74c3c, #f1c40f);
+}
+
+.sidebar-button.active {
+    -fx-background-color: #34495e;
+    -fx-border-color: linear-gradient(to bottom, #2ecc71, #e74c3c, #f1c40f);
+}
+
+/* Conteneurs de sections */
+.section-pane {
+    -fx-background-color: white;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 0);
+    -fx-background-radius: 5;
+    -fx-border-radius: 5;
+    -fx-border-width: 1px;
+    -fx-border-color: linear-gradient(to right, #2ecc71, #e74c3c, #f1c40f);
+}
+
+/* Graphiques et tableaux */
+.chart {
+    -fx-padding: 10px;
+    -fx-background-color: white;
+    -fx-border-width: 1px;
+    -fx-border-color: linear-gradient(to right, #2ecc71, #e74c3c, #f1c40f);
+    -fx-border-radius: 5;
+}
+
+.table-view {
+    -fx-background-color: white;
+    -fx-border-width: 1px;
+    -fx-border-color: linear-gradient(to right, #2ecc71, #e74c3c, #f1c40f);
+    -fx-border-radius: 5;
+}
+
+/* Boutons */
+.button {
+    -fx-background-color: #146296;
+    -fx-text-fill: white;
+    -fx-padding: 8px 15px;
+    -fx-background-radius: 5;
+}
+
+.button:hover {
+    -fx-background-color: #0d369e;
+}
+
+.export-button {
+    -fx-background-color: #3498db;
+}
+
+.export-button:hover {
+    -fx-background-color: #2980b9;
+}
+
+/* Listes et ComboBox */
+.combo-box {
+    -fx-background-color: white;
+    -fx-border-color: #bdc3c7;
+    -fx-border-radius: 3;
+}
+
+.list-view {
+    -fx-background-color: white;
+    -fx-border-color: #bdc3c7;
+    -fx-border-radius: 3;
+}
+
+/* Animation du hover */
+.sidebar-button, .button {
+    -fx-transition: all 0.3s ease;
+}
+
+/* Bordures avec dégradé */
+.chart-container, .table-container {
+    -fx-border-width: 1px;
+    -fx-border-color: linear-gradient(to right, #2ecc71, #e74c3c, #f1c40f);
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-padding: 10px;
+}
+
+.table-row-cell:hover {
+    -fx-background-color: #f2f2f2;
+}
+
+.action-button {
+    -fx-background-color: #4a90e2;
+    -fx-text-fill: white;
+}
+
+.validate-button {
+    -fx-background-color: #4CAF50;
+    -fx-text-fill: white;
+}
+
+.scroll-pane {
+    -fx-background-color: transparent;
+}
+
+.scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+
+.table-view {
+    -fx-focus-color: transparent;
+}
+
+.section-pane {
+    -fx-background-color: white;
+}
+
+.section-pane > .title {
+    -fx-background-color: #e6e6e6;
+    -fx-font-weight: bold;
+}
+
+.logout-button {
+    -fx-background-color: #d9534f; /* Couleur rouge pour indiquer la déconnexion */
+    -fx-margin-bottom: 15px; /* Marge en bas pour ne pas coller au bord */
+}
+
+.logout-button:hover {
+    -fx-background-color: #c9302c; /* Rouge plus foncé au survol */
+}

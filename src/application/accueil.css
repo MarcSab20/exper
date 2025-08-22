@@ -1,0 +1,44 @@
+.accueil-container {
+    -fx-background-color: transparent;
+    -fx-padding: 10;
+}
+
+.content-box {
+    -fx-padding: 10;
+}
+
+.section-pane {
+    -fx-padding: 5;
+}
+
+.section-pane > .title {
+    -fx-background-color: #f0f0f0;
+    -fx-font-weight: bold;
+}
+
+.security-text {
+    -fx-padding: 5;
+}
+
+.feature-item {
+    -fx-padding: 5 0 5 0;
+}
+
+
+/* Pour s'assurer que la TableView s'adapte correctement */
+.table-view {
+    -fx-table-cell-border-color: transparent;
+}
+
+.table-view .column-header-background {
+    -fx-background-color: #f0f0f0;
+}
+
+.table-view .column-header {
+    -fx-padding: 5;
+}
+
+/* Pour que l'image s'adapte à la taille de la fenêtre */
+#organigrammeView {
+    -fx-fit-to-width: true;
+}

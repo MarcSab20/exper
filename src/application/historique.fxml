@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="application.HistoriqueController"
+      styleClass="historique-container"
+      spacing="20">
+
+    <TabPane>
+        <Tab text="Historique des connexions" closable="false">
+            <VBox spacing="10">
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <DatePicker fx:id="connexionDateDebut" promptText="Date début"/>
+                    <DatePicker fx:id="connexionDateFin" promptText="Date fin"/>
+                    <Button text="Filtrer" onAction="#filtrerConnexions"/>
+                </HBox>
+                
+                <TableView fx:id="connexionsTable">
+                    <columns>
+                        <TableColumn text="Date" fx:id="connexionDateColumn" prefWidth="200"/>
+                        <TableColumn text="Utilisateur" fx:id="userColumn" prefWidth="100"/>
+                        <TableColumn text="Action" fx:id="actionColumn" prefWidth="100"/>
+                        <TableColumn text="Statut" fx:id="statusColumn" prefWidth="100"/>
+                    </columns>
+                </TableView>
+            </VBox>
+        </Tab>
+
+        <Tab text="Historique des modifications" closable="false">
+            <VBox spacing="10">
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <DatePicker fx:id="modifDateDebut" promptText="Date début"/>
+                    <DatePicker fx:id="modifDateFin" promptText="Date fin"/>
+                    <ComboBox fx:id="tableFilter" promptText="Table"/>
+                    <Button text="Filtrer" onAction="#filtrerModifications"/>
+                </HBox>
+                
+                <TableView fx:id="modificationsTable">
+                    <columns>
+                        <TableColumn text="Date" fx:id="modifDateColumn" prefWidth="150"/>
+                        <TableColumn text="Table" fx:id="tableColumn" prefWidth="120"/>
+                        <TableColumn text="Type" fx:id="typeColumn" prefWidth="100"/>
+                        <TableColumn text="Utilisateur" fx:id="modifUserColumn" prefWidth="150"/>
+                        <TableColumn text="Détails" fx:id="detailsColumn" prefWidth="300"/>
+                    </columns>
+                </TableView>
+            </VBox>
+        </Tab>
+    </TabPane>
+
+    <HBox spacing="10" alignment="CENTER_RIGHT">
+        <Button text="Exporter en Excel" onAction="#exporterExcel" styleClass="export-button"/>
+        <Button text="Exporter en PDF" onAction="#exporterPDF" styleClass="export-button"/>
+    </HBox>
+</VBox>

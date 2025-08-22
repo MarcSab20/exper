@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="application.MiseAJourController"
+      
+      styleClass="mises-a-jour-container"
+      spacing="20"
+      >
+
+    <TitledPane text="État des mises à jour" styleClass="section-pane" expanded="true">
+        <VBox spacing="10">
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Label text="Table sélectionnée:" styleClass="info-label"/>
+                <ComboBox fx:id="tableComboBox" prefWidth="150"/>
+            </HBox>
+            
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Label text="Dernière mise à jour:" styleClass="info-label"/>
+                <Label fx:id="lastUpdateLabel" styleClass="date-label"/>
+            </HBox>
+
+            <TableView fx:id="updatesTable" VBox.vgrow="ALWAYS">
+                <columns>
+                    <TableColumn text="Table" fx:id="tableColumn" prefWidth="100"/>
+                    <TableColumn text="Date" fx:id="dateColumn" prefWidth="150"/>
+                    <TableColumn text="Statut" fx:id="statusColumn" prefWidth="80"/>
+                    <TableColumn text="Description" fx:id="descriptionColumn" prefWidth="200"/>
+                    <TableColumn text="Mis à jour" fx:id="updatedColumn" prefWidth="80"/>
+                    <TableColumn text="Insérés" fx:id="insertedColumn" prefWidth="80"/>
+                </columns>
+            </TableView>
+        </VBox>
+    </TitledPane>
+
+    <TitledPane text="Nouvelle mise à jour" styleClass="section-pane" expanded="true">
+        <VBox spacing="15">
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Label text="Fichier CSV:" prefWidth="80"/>
+                <TextField fx:id="filePathField" HBox.hgrow="ALWAYS"/>
+                <Button text="Parcourir" onAction="#browseFile"/>
+            </HBox>
+
+            <HBox alignment="CENTER">
+                <Button text="Lancer la mise à jour" onAction="#startUpdate"
+                        styleClass="update-button" prefWidth="200" prefHeight="40"/>
+            </HBox>
+
+            <VBox spacing="5" alignment="CENTER">
+                <Label fx:id="statusLabel" styleClass="status-label"/>
+                <ProgressBar fx:id="updateProgress" visible="false" prefWidth="400"/>
+            </VBox>
+        </VBox>
+    </TitledPane>
+</VBox>

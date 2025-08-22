@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns="http://javafx.com/javafx/15.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="application.RequeteSpecialeController">
+   <center>
+      <VBox spacing="10">
+         <padding>
+            <Insets bottom="20.0" left="20.0" right="20.0" top="20.0" />
+         </padding>
+         
+         <Label text="Requête Spéciale" style="-fx-font-size: 18px; -fx-font-weight: bold;" />
+         
+         <TitledPane text="Création de contraintes" collapsible="false">
+            <VBox spacing="10">
+               <HBox spacing="10" alignment="CENTER_LEFT">
+                  <Label text="Colonne:" />
+                  <ComboBox fx:id="colonneComboBox" prefWidth="150" />
+                  
+                  <Label text="Opérateur:" />
+                  <ComboBox fx:id="operateurComboBox" prefWidth="100" />
+                  
+                  <Label text="Valeur:" />
+                  <HBox fx:id="valueContainer" prefWidth="200" />
+               </HBox>
+               
+               <HBox spacing="10" alignment="CENTER_RIGHT">
+                  <Button text="Ajouter contrainte" onAction="#ajouterContrainte" />
+               </HBox>
+            </VBox>
+         </TitledPane>
+         
+         <TitledPane text="Contraintes définies" collapsible="false">
+            <VBox spacing="10">
+               <ListView fx:id="contraintesListView" prefHeight="100" />
+            </VBox>
+         </TitledPane>
+         
+         <TitledPane text="Format de sortie" collapsible="false">
+            <VBox spacing="10">
+               <HBox spacing="10" alignment="CENTER_LEFT">
+                  <Label text="Format:" />
+                  <ComboBox fx:id="formatSortieComboBox" prefWidth="150" />
+               </HBox>
+               
+               <HBox fx:id="optionsContainer" spacing="10" alignment="CENTER_LEFT" />
+            </VBox>
+         </TitledPane>
+         
+         <TitledPane text="Résultats" collapsible="false">
+            <VBox spacing="10">
+               <StackPane fx:id="resultsContainer" prefHeight="300" />
+               
+               <HBox spacing="10" alignment="CENTER_RIGHT">
+                  <Button text="Exécuter requête" onAction="#executerRequete" />
+                  <Button text="Exporter Excel" onAction="#exporterExcel" />
+                  <Button text="Exporter PDF" onAction="#exporterPDF" />
+               </HBox>
+            </VBox>
+         </TitledPane>
+      </VBox>
+   </center>
+   
+   <right>
+      <VBox spacing="10" prefWidth="500">
+         <padding>
+            <Insets bottom="20.0" left="10.0" right="20.0" top="20.0" />
+         </padding>
+         
+         <TitledPane text="Requêtes sauvegardées" collapsible="false">
+            <VBox spacing="10">
+               <TextField fx:id="nomRequeteTextField" promptText="Nom de la requête" />
+               
+               <HBox spacing="10" alignment="CENTER">
+                  <Button text="Sauvegarder" onAction="#sauvegarderRequete" />
+                  <Button text="Supprimer" onAction="#supprimerRequete" />
+                  <Button text="Exécuter" onAction="#executerRequeteSauvegardee" />
+               </HBox>
+               
+               <ListView fx:id="requetesSauvegardeesListView" prefHeight="300" />
+            </VBox>
+         </TitledPane>
+      </VBox>
+   </right>
+</BorderPane>

@@ -1,0 +1,15 @@
+.anchorPane_background_center{
+	-fx-background-image:url("ALPHA-JET-removebg-preview.png");
+	-fx-background-repeat: no-repeat;
+    -fx-background-position: center center;
+    -fx-background-size: cover;
+    -fx-background-color: rgba(25, 26, 51, 0.5);
+    -fx-background-color: linear-gradient(to bottom, #191A33, #262841);
+	
+}
+
+
+.create-btn:hover{
+	-fx-background-color: #a6e2b3;
+	 -fx-background-color: #191A33
+}

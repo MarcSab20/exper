@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.fx.ide.jdt.core.JAVAFX_CONTAINER">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="/home/marco/Documents/jar_files/fontawesomefx-8.9.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/jar_files/mysql-connector-j-8.4.0.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/jar_files/ojdbc11.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/jar_pdf_excel/itextpdf-5.5.13.3.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/jar_pdf_excel/commons-collections4-4.4.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/jar_pdf_excel/commons-compress-1.21.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/jar_pdf_excel/poi-5.4.0.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/jar_pdf_excel/poi-ooxml-5.2.3.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/jar_pdf_excel/xmlbeans-5.1.1.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/openjfx-22.0.2_linux-x64_bin-sdk/javafx-sdk-22.0.2/lib/javafx.base.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/openjfx-22.0.2_linux-x64_bin-sdk/javafx-sdk-22.0.2/lib/javafx.controls.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/openjfx-22.0.2_linux-x64_bin-sdk/javafx-sdk-22.0.2/lib/javafx.fxml.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/openjfx-22.0.2_linux-x64_bin-sdk/javafx-sdk-22.0.2/lib/javafx.graphics.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/openjfx-22.0.2_linux-x64_bin-sdk/javafx-sdk-22.0.2/lib/javafx.media.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/openjfx-22.0.2_linux-x64_bin-sdk/javafx-sdk-22.0.2/lib/javafx.swing.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/openjfx-22.0.2_linux-x64_bin-sdk/javafx-sdk-22.0.2/lib/javafx.web.jar"/>
+	<classpathentry kind="lib" path="/home/marco/Documents/openjfx-22.0.2_linux-x64_bin-sdk/javafx-sdk-22.0.2/lib/javafx-swt.jar"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-21"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>

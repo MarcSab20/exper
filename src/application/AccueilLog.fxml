@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.text.TextFlow?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.text.Text?>
+<?import javafx.geometry.Insets?>
+
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="application.AccueilLogController"
+      stylesheets="@mainLog.css"
+      styleClass="logistique-container"
+      spacing="20"
+      prefWidth="900"
+      prefHeight="700">
+
+    <padding>
+        <Insets top="10" right="10" bottom="10" left="10"/>
+    </padding>
+
+    <!-- Aperçu Logistique -->
+    <TitledPane text="Aperçu Logistique" styleClass="section-pane" collapsible="false">
+        <VBox spacing="10">
+            <Label wrapText="true" text="Service responsable de la gestion des ressources matérielles et de l'approvisionnement."/>
+            <TextFlow styleClass="info-text">
+                <Text text="Gestion des stocks, maintenance des équipements, et coordination des approvisionnements."/>
+            </TextFlow>
+        </VBox>
+    </TitledPane>
+
+    <!-- État des Stocks -->
+    <TitledPane text="État des Stocks" styleClass="section-pane" collapsible="false" VBox.vgrow="ALWAYS">
+        <VBox spacing="10">
+        <HBox spacing="10" alignment="CENTER_RIGHT">
+            <Button fx:id="btnAjouterStock" text="Ajouter" styleClass="add-button"/>
+            <Button fx:id="btnMajStocks" text="Mettre à jour" styleClass="action-button"/>
+            <Button fx:id="btnValiderStocks" text="Valider" styleClass="validate-button"/>
+        </HBox>
+        <ScrollPane fitToWidth="true" fitToHeight="true" VBox.vgrow="ALWAYS">
+                <TableView fx:id="stocksTable" VBox.vgrow="ALWAYS">
+                    <columns>
+                        <TableColumn text="Statut" fx:id="statutStockColumn" minWidth="60" maxWidth="80"/>
+                        <TableColumn text="Désignation" fx:id="designationStockColumn" minWidth="150"/>
+                        <TableColumn text="Quantité" fx:id="quantiteColumn" minWidth="80" maxWidth="100"/>
+                        <TableColumn text="État" fx:id="etatColumn" minWidth="100"/>
+                        <TableColumn text="Description" fx:id="descriptionStockColumn" minWidth="150"/>
+                        <TableColumn text="Valeur critique" fx:id="valeurCritiqueColumn" minWidth="100" maxWidth="120"/>
+                    </columns>
+                    <placeholder>
+                        <Label text="Aucune donnée disponible"/>
+                    </placeholder>
+                    <columnResizePolicy>
+                        <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                    </columnResizePolicy>
+                </TableView>
+            </ScrollPane>
+        </VBox>
+    </TitledPane>
+
+    <!-- Maintenance Planifiée -->
+    <TitledPane text="Maintenance Planifiée" styleClass="section-pane" collapsible="false" VBox.vgrow="ALWAYS">
+        <VBox spacing="10">
+        <HBox spacing="10" alignment="CENTER_RIGHT">
+            <Button fx:id="btnAjouterMaintenance" text="Ajouter" styleClass="add-button"/>
+            <Button fx:id="btnMajMaintenance" text="Mettre à jour" styleClass="action-button"/>
+            <Button fx:id="btnValiderMaintenance" text="Valider" styleClass="validate-button"/>
+        </HBox>
+        <ScrollPane fitToWidth="true" fitToHeight="true" VBox.vgrow="ALWAYS">
+                <TableView fx:id="maintenanceTable" VBox.vgrow="ALWAYS">
+                    <columns>
+                        <TableColumn text="Statut" fx:id="statutMaintenanceColumn" minWidth="60" maxWidth="80"/>
+                        <TableColumn text="Date" fx:id="dateMaintenanceColumn" minWidth="100" maxWidth="120"/>
+                        <TableColumn text="Désignation" fx:id="designationMaintenanceColumn" minWidth="150"/>
+                        <TableColumn text="Type" fx:id="typeMaintenanceColumn" minWidth="120"/>
+                        <TableColumn text="Description" fx:id="descriptionMaintenanceColumn" minWidth="150"/>
+                        <TableColumn text="Effectuée" fx:id="effectueeColumn" minWidth="80" maxWidth="100"/>
+                    </columns>
+                    <placeholder>
+                        <Label text="Aucune donnée disponible"/>
+                    </placeholder>
+                    <columnResizePolicy>
+                        <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                    </columnResizePolicy>
+                </TableView>
+            </ScrollPane>
+        </VBox>
+    </TitledPane>
+</VBox>

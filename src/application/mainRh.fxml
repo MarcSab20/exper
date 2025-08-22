@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<HBox styleClass="main-container" stylesheets="@mainRh.css" xmlns="http://javafx.com/javafx/22" xmlns:fx="http://javafx.com/fxml/1" fx:controller="application.MainRhController">
+      
+
+    <!-- Sidebar -->
+    <VBox styleClass="sidebar">
+        <ImageView fitHeight="100" fitWidth="150.0" styleClass="logo">
+        	<image>
+                <Image url="@logo.png" />
+            </image>
+         <VBox.margin>
+            <Insets left="38.0" />
+         </VBox.margin>
+        </ImageView>
+        
+        <Button onAction="#showAccueil" styleClass="sidebar-button" text="Accueil" />
+        <Button onAction="#showDashboard" styleClass="sidebar-button" text="Dashboard" />
+        <Button onAction="#showRequetes" styleClass="sidebar-button" text="Requêtes" />
+        <Button onAction="#showMisesAJour" styleClass="sidebar-button" text="Mises à jour" />
+        <Button onAction="#showGraphes" styleClass="sidebar-button" text="Requêtes Spéciales" />
+        <Button onAction="#showHistorique" styleClass="sidebar-button" text="Historique" />
+        <Button onAction="#showParametres" styleClass="sidebar-button" text="Paramètres" />
+    </VBox>
+
+    <!-- Content Area -->
+    <StackPane fx:id="contentArea" HBox.hgrow="ALWAYS">
+        <!-- Les différentes vues seront chargées ici dynamiquement -->
+    </StackPane>
+</HBox>

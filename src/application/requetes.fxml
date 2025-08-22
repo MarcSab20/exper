@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.collections.FXCollections?>
+<?import javafx.collections.ObservableList?>
+
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="application.RequeteController"
+      styleClass="requetes-container"
+      spacing="20">
+
+    <TitledPane text="Constructeur de requêtes" styleClass="section-pane">
+        <VBox spacing="10">
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <ComboBox fx:id="colonneComboBox" promptText="Sélectionner une colonne"/>
+                <ComboBox fx:id="operateurComboBox" promptText="Opérateur"/>
+                <HBox fx:id="valueContainer" spacing="10"/>
+                <Button text="Ajouter contrainte" onAction="#ajouterContrainte"/>
+            </HBox>
+
+            <ListView fx:id="contraintesListView" styleClass="contraintes-list"/>
+
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <Label text="Format de sortie:"/>
+                <ComboBox fx:id="formatSortieComboBox"/>
+                <HBox fx:id="optionsContainer" spacing="10"/>
+                <Button text="Valider" onAction="#executerRequete" styleClass="validate-button"/>
+            </HBox>
+        </VBox>
+    </TitledPane>
+
+    <!-- Zone de résultats -->
+    <TitledPane text="Résultats" styleClass="section-pane" VBox.vgrow="ALWAYS">
+        <StackPane fx:id="resultsContainer">
+            <!-- Les résultats seront affichés ici dynamiquement -->
+        </StackPane>
+    </TitledPane>
+
+    <!-- Boutons d'export -->
+    <HBox spacing="10" alignment="CENTER_RIGHT">
+        <Button text="Exporter en Excel" onAction="#exporterExcel" styleClass="export-button"/>
+        <Button text="Exporter en PDF" onAction="#exporterPDF" styleClass="export-button"/>
+    </HBox>
+</VBox>

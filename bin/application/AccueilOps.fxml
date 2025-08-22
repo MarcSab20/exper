@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.text.TextFlow?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.text.Text?>
+
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="application.AccueilOpsController"
+      stylesheets="@mainOps.css"
+      styleClass="operations-container"
+      spacing="20">
+
+    <!-- Situation Opérationnelle -->
+    <TitledPane text="Situation Opérationnelle" styleClass="section-pane">
+        <VBox spacing="10">
+            <Label wrapText="true" text="Centre de commandement et de contrôle des opérations en cours."/>
+            <TextFlow styleClass="info-text">
+                <Text text="Suivi en temps réel des activités opérationnelles et coordination des missions."/>
+            </TextFlow>
+        </VBox>
+    </TitledPane>
+
+    <!-- Missions en Cours -->
+    <TitledPane text="Missions en Cours" styleClass="section-pane">
+        <TableView fx:id="missionsTable">
+            <columns>
+                <TableColumn text="Code Mission" fx:id="codeMissionColumn"/>
+                <TableColumn text="Type" fx:id="typeMissionColumn"/>
+                <TableColumn text="Statut" fx:id="statutMissionColumn"/>
+                <TableColumn text="Personnel Assigné" fx:id="personnelColumn"/>
+            </columns>
+        </TableView>
+    </TitledPane>
+
+    <!-- Rapports Quotidiens -->
+    <TitledPane text="Rapports Quotidiens" styleClass="section-pane">
+        <VBox spacing="10">
+            <TableView fx:id="rapportsTable">
+                <columns>
+                    <TableColumn text="Date" fx:id="dateRapportColumn"/>
+                    <TableColumn text="Type" fx:id="typeRapportColumn"/>
+                    <TableColumn text="Statut" fx:id="statutRapportColumn"/>
+                </columns>
+            </TableView>
+        </VBox>
+    </TitledPane>
+
+    <!-- Alertes -->
+    <TitledPane text="Alertes et Notifications" styleClass="section-pane">
+        <VBox spacing="10">
+            <ListView fx:id="alertesList" prefHeight="150"/>
+        </VBox>
+    </TitledPane>
+
+</VBox>

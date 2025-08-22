@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.ScrollPane?>
+
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="application.dashboardController"
+      stylesheets="@dashboardCss.css"
+      styleClass="main-container">
+
+    <MenuBar>
+        <Menu text="Options">
+            <MenuItem text="Personnaliser" onAction="#showCustomizeDialog"/>
+        </Menu>
+    </MenuBar>
+
+    <FlowPane styleClass="stats-bar" hgap="20" vgap="20">
+        <VBox fx:id="messagesBox" styleClass="stat-box">
+            <Label fx:id="messagesLabel" styleClass="stat-label"/>
+            <Label fx:id="messagesCount" styleClass="stat-value"/>
+        </VBox>
+
+        <VBox fx:id="salesBox" styleClass="stat-box">
+            <Label fx:id="salesLabel" styleClass="stat-label"/>
+            <Label fx:id="salesCount" styleClass="stat-value"/>
+        </VBox>
+
+        <VBox fx:id="notificationsBox" styleClass="stat-box">
+            <Label fx:id="notificationsLabel" styleClass="stat-label"/>
+            <Label fx:id="notificationsCount" styleClass="stat-value"/>
+        </VBox>
+
+        <VBox fx:id="scheduledBox" styleClass="stat-box">
+            <Label fx:id="scheduledLabel" styleClass="stat-label"/>
+            <Label fx:id="scheduledCount" styleClass="stat-value"/>
+        </VBox>
+    </FlowPane>
+
+    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS">
+        <FlowPane fx:id="chartsContainer" hgap="10" vgap="10" styleClass="charts-container">
+            <!-- Les graphiques seront ajoutés ici dynamiquement -->
+        </FlowPane>
+    </ScrollPane>
+
+</VBox>
