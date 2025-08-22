@@ -7,53 +7,123 @@
 <VBox xmlns="http://javafx.com/javafx"
       xmlns:fx="http://javafx.com/fxml"
       fx:controller="application.MiseAJourController"
-      
       styleClass="mises-a-jour-container"
-      spacing="20"
-      >
+      spacing="20">
 
-    <TitledPane text="État des mises à jour" styleClass="section-pane" expanded="true">
-        <VBox spacing="10">
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+
+    <!-- En-tête avec informations de service -->
+    <HBox spacing="20" alignment="CENTER_LEFT" styleClass="header-section">
+        <Label text="📊 Gestion des Mises à Jour" styleClass="page-title"/>
+        <Separator orientation="VERTICAL"/>
+        <Label text="Service actuel:" styleClass="service-label"/>
+        <Label fx:id="serviceLabel" text="Chargement..." styleClass="service-value"/>
+    </HBox>
+
+    <!-- Section de sélection et informations -->
+    <TitledPane text="Configuration de la mise à jour" styleClass="section-pane" expanded="true">
+        <VBox spacing="15">
+            <!-- Sélection de table -->
             <HBox spacing="10" alignment="CENTER_LEFT">
-                <Label text="Table sélectionnée:" styleClass="info-label"/>
-                <ComboBox fx:id="tableComboBox" prefWidth="150"/>
+                <Label text="Table à mettre à jour:" prefWidth="150" styleClass="field-label"/>
+                <ComboBox fx:id="tableComboBox" prefWidth="300" promptText="Sélectionnez une table"/>
             </HBox>
             
+            <!-- Informations sur la table -->
+            <VBox spacing="5">
+                <Label fx:id="tableInfoLabel" text="" styleClass="table-info"/>
+                <Label fx:id="lastUpdateLabel" text="" styleClass="last-update-info"/>
+            </VBox>
+            
+            <!-- Sélection de fichier -->
             <HBox spacing="10" alignment="CENTER_LEFT">
-                <Label text="Dernière mise à jour:" styleClass="info-label"/>
-                <Label fx:id="lastUpdateLabel" styleClass="date-label"/>
+                <Label text="Fichier CSV:" prefWidth="150" styleClass="field-label"/>
+                <TextField fx:id="filePathField" HBox.hgrow="ALWAYS" promptText="Chemin vers le fichier CSV"/>
+                <Button text="📁 Parcourir" onAction="#browseFile" styleClass="browse-button"/>
+            </HBox>
+            
+            <!-- Boutons d'action -->
+            <HBox spacing="15" alignment="CENTER">
+                <Button fx:id="validateSchemaButton" text="🔍 Valider le Schéma" 
+                        onAction="#validateSchema" styleClass="validate-schema-button"/>
+                <Button fx:id="startUpdateButton" text="🚀 Lancer la Mise à Jour" 
+                        onAction="#startUpdate" styleClass="start-update-button"/>
+            </HBox>
+            
+            <!-- Barre de progression et statut -->
+            <VBox spacing="5" alignment="CENTER">
+                <Label fx:id="statusLabel" text="Prêt pour la mise à jour" styleClass="status-label"/>
+                <ProgressBar fx:id="updateProgress" visible="false" prefWidth="400" styleClass="update-progress"/>
+            </VBox>
+        </VBox>
+    </TitledPane>
+
+    <!-- Historique des mises à jour -->
+    <TitledPane text="Historique des mises à jour" styleClass="section-pane" expanded="true" VBox.vgrow="ALWAYS">
+        <VBox spacing="10">
+            <!-- Légende pour le statut -->
+            <HBox spacing="20" alignment="CENTER_LEFT" styleClass="legend-section">
+                <Label text="Légende:" styleClass="legend-title"/>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: green; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                    <Label text="Succès" styleClass="legend-text"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: orange; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                    <Label text="Partiel" styleClass="legend-text"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: red; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                    <Label text="Échec" styleClass="legend-text"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: gray; -fx-font-size: 14px; -fx-font-weight: bold;"/>
+                    <Label text="Périmé" styleClass="legend-text"/>
+                </HBox>
             </HBox>
 
-            <TableView fx:id="updatesTable" VBox.vgrow="ALWAYS">
+            <!-- Tableau d'historique -->
+            <TableView fx:id="updatesTable" VBox.vgrow="ALWAYS" styleClass="updates-table">
                 <columns>
-                    <TableColumn text="Table" fx:id="tableColumn" prefWidth="100"/>
+                    <TableColumn text="Table" fx:id="tableColumn" prefWidth="150"/>
                     <TableColumn text="Date" fx:id="dateColumn" prefWidth="150"/>
                     <TableColumn text="Statut" fx:id="statusColumn" prefWidth="80"/>
                     <TableColumn text="Description" fx:id="descriptionColumn" prefWidth="200"/>
-                    <TableColumn text="Mis à jour" fx:id="updatedColumn" prefWidth="80"/>
-                    <TableColumn text="Insérés" fx:id="insertedColumn" prefWidth="80"/>
+                    <TableColumn text="Nouveaux" fx:id="insertedColumn" prefWidth="80"/>
+                    <TableColumn text="Modifiés" fx:id="updatedColumn" prefWidth="80"/>
+                    <TableColumn text="Inchangés" fx:id="unchangedColumn" prefWidth="80"/>
                 </columns>
+                <placeholder>
+                    <VBox alignment="CENTER" spacing="10">
+                        <Label text="📋 Aucun historique de mise à jour" styleClass="placeholder-title"/>
+                        <Label text="Les mises à jour apparaîtront ici après leur exécution" styleClass="placeholder-description"/>
+                    </VBox>
+                </placeholder>
+                <columnResizePolicy>
+                    <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
+                </columnResizePolicy>
             </TableView>
         </VBox>
     </TitledPane>
 
-    <TitledPane text="Nouvelle mise à jour" styleClass="section-pane" expanded="true">
-        <VBox spacing="15">
-            <HBox spacing="10" alignment="CENTER_LEFT">
-                <Label text="Fichier CSV:" prefWidth="80"/>
-                <TextField fx:id="filePathField" HBox.hgrow="ALWAYS"/>
-                <Button text="Parcourir" onAction="#browseFile"/>
-            </HBox>
-
-            <HBox alignment="CENTER">
-                <Button text="Lancer la mise à jour" onAction="#startUpdate"
-                        styleClass="update-button" prefWidth="200" prefHeight="40"/>
-            </HBox>
-
-            <VBox spacing="5" alignment="CENTER">
-                <Label fx:id="statusLabel" styleClass="status-label"/>
-                <ProgressBar fx:id="updateProgress" visible="false" prefWidth="400"/>
-            </VBox>
+    <!-- Section d'aide -->
+    <TitledPane text="💡 Aide et Instructions" styleClass="help-section" expanded="false">
+        <VBox spacing="10">
+            <Label text="Instructions pour la mise à jour:" styleClass="help-title"/>
+            <Label text="1. Sélectionnez la table que vous souhaitez mettre à jour" styleClass="help-text"/>
+            <Label text="2. Choisissez un fichier CSV avec les colonnes correspondant à la table" styleClass="help-text"/>
+            <Label text="3. Validez le schéma pour vérifier la compatibilité" styleClass="help-text"/>
+            <Label text="4. Lancez la mise à jour si la validation réussit" styleClass="help-text"/>
+            
+            <Separator/>
+            
+            <Label text="Format du fichier CSV:" styleClass="help-title"/>
+            <Label text="• Séparateur: point-virgule (;)" styleClass="help-text"/>
+            <Label text="• Encodage: UTF-8" styleClass="help-text"/>
+            <Label text="• Première ligne: noms des colonnes" styleClass="help-text"/>
+            <Label text="• Colonnes obligatoires: selon la structure de la table sélectionnée" styleClass="help-text"/>
         </VBox>
     </TitledPane>
 </VBox>

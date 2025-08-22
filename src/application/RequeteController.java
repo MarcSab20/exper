@@ -5,14 +5,29 @@ import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.Node;
 import javafx.scene.chart.*;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import java.util.*;
+
+import com.itextpdf.text.BaseColor;
+import com.itextpdf.text.Document;
+import com.itextpdf.text.DocumentException;
+import com.itextpdf.text.Element;
+import com.itextpdf.text.Font;
+import com.itextpdf.text.Paragraph;
+import com.itextpdf.text.Phrase;
+import com.itextpdf.text.pdf.PdfPCell;
+import com.itextpdf.text.pdf.PdfPTable;
+import com.itextpdf.text.pdf.PdfWriter;
+
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.sql.*;
 
 public class RequeteController {
@@ -725,8 +740,132 @@ public class RequeteController {
 
     @FXML
     private void exporterPDF() {
-        // TODO: Implémenter l'export PDF
-        showAlert("Information", "La fonctionnalité d'export PDF sera implémentée prochainement");
+        try {
+            // Vérifier qu'il y a des résultats à exporter
+            if (resultsContainer.getChildren().isEmpty()) {
+                showAlert("Erreur", "Aucun résultat à exporter. Veuillez d'abord exécuter une requête.");
+                return;
+            }
+            
+            // Créer un document PDF
+            Document document = new Document();
+            File file = new File("Requete_" + System.currentTimeMillis() + ".pdf");
+            PdfWriter.getInstance(document, new FileOutputStream(file));
+            
+            document.open();
+            
+            // Ajouter un titre
+            Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
+            Paragraph title = new Paragraph("Résultats de requête", titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
+            document.add(title);
+            document.add(new Paragraph(" ")); // Espace
+            
+            // Ajouter les contraintes utilisées
+            Font sectionFont = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD);
+            document.add(new Paragraph("Contraintes appliquées:", sectionFont));
+            
+            for (String contrainte : contraintes) {
+                document.add(new Paragraph("• " + contrainte));
+            }
+            document.add(new Paragraph(" ")); // Espace
+            
+            // Exporter selon le format de sortie
+            String formatSortie = formatSortieComboBox.getValue();
+            
+            if ("Tableau".equals(formatSortie)) {
+                exportTableauToPDF(document);
+            } else if ("Liste".equals(formatSortie)) {
+                exportListeToPDF(document);
+            } else if ("Graphique".equals(formatSortie)) {
+                exportGraphiqueToPDF(document);
+            }
+            
+            document.close();
+            
+            showAlert("Information", "Export PDF réussi : " + file.getAbsolutePath());
+            HistoryManager.logCreation("Requêtes", "Export PDF des résultats de requête");
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            showAlert("Erreur", "Erreur lors de l'export PDF : " + e.getMessage());
+        }
+    }
+    
+    private void exportTableauToPDF(Document document) throws DocumentException {
+        Node tableNode = resultsContainer.getChildren().get(0);
+        if (tableNode instanceof TableView) {
+            @SuppressWarnings("unchecked")
+            TableView<Map<String, String>> tableView = (TableView<Map<String, String>>) tableNode;
+            
+            // Créer la table PDF
+            int columnCount = tableView.getColumns().size();
+            PdfPTable table = new PdfPTable(columnCount);
+            table.setWidthPercentage(100);
+            
+            // Ajouter les en-têtes
+            for (TableColumn<?, ?> column : tableView.getColumns()) {
+                PdfPCell cell = new PdfPCell(new Phrase(column.getText()));
+                cell.setBackgroundColor(BaseColor.LIGHT_GRAY);
+                table.addCell(cell);
+            }
+            
+            // Ajouter les données
+            for (Map<String, String> row : tableView.getItems()) {
+                for (TableColumn<?, ?> column : tableView.getColumns()) {
+                    String value = row.get(column.getText());
+                    table.addCell(value != null ? value : "");
+                }
+            }
+            
+            document.add(table);
+        }
+    }
+    
+    private void exportListeToPDF(Document document) throws DocumentException {
+        Node listNode = resultsContainer.getChildren().get(0);
+        if (listNode instanceof ListView) {
+            @SuppressWarnings("unchecked")
+            ListView<String> listView = (ListView<String>) listNode;
+            
+            document.add(new Paragraph("Résultats:"));
+            
+            for (String item : listView.getItems()) {
+                document.add(new Paragraph("• " + item));
+            }
+        }
+    }
+    
+    private void exportGraphiqueToPDF(Document document) throws DocumentException {
+        // Pour les graphiques, on peut exporter les données sous forme de tableau
+        String colonneGroupe = colonneGroupByComboBox.getValue();
+        
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(buildSqlQuery("Graphique"))) {
+            
+            // Créer une table avec les données du graphique
+            PdfPTable table = new PdfPTable(2);
+            table.setWidthPercentage(100);
+            
+            // En-têtes
+            table.addCell(colonneGroupe);
+            table.addCell("Nombre");
+            
+            // Données
+            while (rs.next()) {
+                String category = rs.getString(colonneGroupe);
+                int count = rs.getInt("count");
+                table.addCell(category != null ? category : "Non défini");
+                table.addCell(String.valueOf(count));
+            }
+            
+            document.add(new Paragraph("Données du graphique:"));
+            document.add(table);
+            
+        } catch (SQLException e) {
+            document.add(new Paragraph("Erreur lors de l'export des données du graphique"));
+        }
     }
 
     private void showAlert(String title, String content) {

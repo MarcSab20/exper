@@ -6,107 +6,152 @@ import java.sql.*;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public class CSVProcessor {
     private static final Logger LOGGER = Logger.getLogger(CSVProcessor.class.getName());
-    private static final String CSV_SEPARATOR = ";"; // Séparateur par défaut (peut être changé)
+    private static final String CSV_SEPARATOR = ";"; // Séparateur par défaut
     
     /**
-     * Vérifie si le fichier CSV est compatible avec le schéma de la table
-     * @param csvFile Le fichier CSV
-     * @param tableName Le nom de la table
-     * @return Vrai si le schéma est compatible, faux sinon
-     * @throws IOException En cas d'erreur de lecture du fichier
+     * Valide la cohérence entre le fichier CSV et la table de destination
      */
-    public static boolean validateCSVSchema(File csvFile, String tableName) throws IOException {
-        List<ColumnInfo> tableSchema = DatabaseManager.getTableSchema(tableName);
+    public static ValidationResult validateCSVSchema(File csvFile, String tableName) throws IOException {
+        List<String> csvColumns = extractCSVHeaders(csvFile);
+        List<String> tableColumns = getTableColumns(tableName);
         
+        ValidationResult result = new ValidationResult();
+        
+        // Vérifier les colonnes manquantes dans le CSV
+        List<String> missingColumns = new ArrayList<>();
+        List<String> requiredColumns = getRequiredColumns(tableName);
+        
+        for (String required : requiredColumns) {
+            if (!csvColumns.contains(required)) {
+                missingColumns.add(required);
+            }
+        }
+        
+        // Vérifier les colonnes en trop dans le CSV
+        List<String> extraColumns = new ArrayList<>();
+        for (String csvColumn : csvColumns) {
+            if (!tableColumns.contains(csvColumn)) {
+                extraColumns.add(csvColumn);
+            }
+        }
+        
+        result.setValid(missingColumns.isEmpty() && extraColumns.isEmpty());
+        result.setMissingColumns(missingColumns);
+        result.setExtraColumns(extraColumns);
+        result.setTableColumns(tableColumns);
+        result.setCsvColumns(csvColumns);
+        
+        return result;
+    }
+    
+    /**
+     * Extrait les en-têtes du fichier CSV
+     */
+    private static List<String> extractCSVHeaders(File csvFile) throws IOException {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), StandardCharsets.UTF_8))) {
             String headerLine = reader.readLine();
             if (headerLine == null) {
                 throw new IOException("Le fichier CSV est vide");
             }
             
-            // Extraire les en-têtes du CSV
             String[] headers = headerLine.split(CSV_SEPARATOR);
-            
-            // Vérifier si toutes les colonnes obligatoires sont présentes
-            for (ColumnInfo column : tableSchema) {
-                if (!column.isNullable() && !column.isPrimaryKey() && !Arrays.asList(headers).contains(column.getName())) {
-                    return false;
-                }
-            }
-            
-            // Vérifier si le CSV contient des colonnes qui n'existent pas dans la table
+            List<String> headerList = new ArrayList<>();
             for (String header : headers) {
-                boolean columnExists = false;
-                for (ColumnInfo column : tableSchema) {
-                    if (column.getName().equalsIgnoreCase(header.trim())) {
-                        columnExists = true;
-                        break;
-                    }
-                }
-                if (!columnExists) {
-                    return false;
-                }
+                headerList.add(header.trim());
             }
-            
-            return true;
+            return headerList;
         }
     }
     
     /**
-     * Effectue la mise à jour de la table à partir du fichier CSV
-     * @param csvFile Le fichier CSV
-     * @param tableName Le nom de la table
-     * @param primaryKeyColumn La colonne de clé primaire (généralement le nom pour la table personnel)
-     * @param updateCallback Callback pour les mises à jour de progression
-     * @return Un objet contenant les résultats de la mise à jour
-     * @throws Exception En cas d'erreur
+     * Obtient les colonnes de la table depuis la base de données
      */
-    public static UpdateResult processCSVUpdate(File csvFile, String tableName, String primaryKeyColumn, 
-                                        ProgressCallback updateCallback) throws Exception {
+    private static List<String> getTableColumns(String tableName) {
+        List<String> columns = new ArrayList<>();
         
-        int recordsUpdated = 0;
-        int recordsInserted = 0;
-        StringBuilder errors = new StringBuilder();
-        
-        // Étape 1: Valider le schéma
-        if (!validateCSVSchema(csvFile, tableName)) {
-            throw new Exception("Le format du fichier CSV n'est pas compatible avec la structure de la table " + tableName);
-        }
-        
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), StandardCharsets.UTF_8))) {
-            String line;
-            String headerLine = reader.readLine();
+        try (Connection conn = DatabaseManager.getConnection()) {
+            DatabaseMetaData metaData = conn.getMetaData();
+            ResultSet rs = metaData.getColumns("exploit", null, tableName, null);
             
-            if (headerLine == null) {
-                throw new IOException("Le fichier CSV est vide");
+            while (rs.next()) {
+                columns.add(rs.getString("COLUMN_NAME"));
             }
             
-            // Extraire les en-têtes du CSV
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de la récupération des colonnes de la table " + tableName, e);
+        }
+        
+        return columns;
+    }
+    
+    /**
+     * Obtient les colonnes obligatoires (NOT NULL) pour une table
+     */
+    private static List<String> getRequiredColumns(String tableName) {
+        List<String> required = new ArrayList<>();
+        
+        try (Connection conn = DatabaseManager.getConnection()) {
+            DatabaseMetaData metaData = conn.getMetaData();
+            ResultSet rs = metaData.getColumns("exploit", null, tableName, null);
+            
+            while (rs.next()) {
+                String columnName = rs.getString("COLUMN_NAME");
+                String isNullable = rs.getString("IS_NULLABLE");
+                String isAutoIncrement = rs.getString("IS_AUTOINCREMENT");
+                
+                // Ajouter aux obligatoires si NOT NULL et pas auto-increment
+                if ("NO".equals(isNullable) && !"YES".equals(isAutoIncrement)) {
+                    required.add(columnName);
+                }
+            }
+            
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de la récupération des colonnes obligatoires", e);
+        }
+        
+        return required;
+    }
+    
+    /**
+     * Effectue la mise à jour intelligente avec différenciation insertion/modification
+     */
+    public static EnhancedUpdateResult processEnhancedCSVUpdate(File csvFile, String tableName, 
+                                                               ProgressCallback updateCallback) throws Exception {
+        
+        int recordsInserted = 0;
+        int recordsUpdated = 0;
+        int recordsUnchanged = 0;
+        StringBuilder errors = new StringBuilder();
+        
+        // Validation du schéma
+        ValidationResult validation = validateCSVSchema(csvFile, tableName);
+        if (!validation.isValid()) {
+            throw new Exception("Schéma CSV incompatible: " + validation.getErrorMessage());
+        }
+        
+        String primaryKey = ServicePermissions.getPrimaryKeyColumn(tableName);
+        
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), StandardCharsets.UTF_8))) {
+            String headerLine = reader.readLine();
             String[] headers = headerLine.split(CSV_SEPARATOR);
             for (int i = 0; i < headers.length; i++) {
                 headers[i] = headers[i].trim();
             }
             
-            // Compter le nombre total de lignes pour la barre de progression
-            int totalLines = 0;
-            try (LineNumberReader lnr = new LineNumberReader(new FileReader(csvFile))) {
-                while (lnr.readLine() != null) {
-                    totalLines++;
-                }
-                // Soustraire 1 pour l'en-tête
-                totalLines--;
-            }
+            // Compter les lignes pour la progression
+            int totalLines = countCSVLines(csvFile) - 1; // -1 pour l'en-tête
             
-            // Traiter chaque ligne
             int currentLine = 0;
             Connection conn = DatabaseManager.getConnection();
-            // Désactiver l'auto-commit pour la transaction
             conn.setAutoCommit(false);
             
             try {
+                String line;
                 while ((line = reader.readLine()) != null) {
                     currentLine++;
                     if (updateCallback != null) {
@@ -117,31 +162,42 @@ public class CSVProcessor {
                         String[] values = line.split(CSV_SEPARATOR);
                         Map<String, String> rowData = new HashMap<>();
                         
-                        // Convertir la ligne en map clé-valeur
+                        // Convertir la ligne en map
                         for (int i = 0; i < Math.min(headers.length, values.length); i++) {
                             rowData.put(headers[i], values[i].trim());
                         }
                         
-                        // Vérifier si la clé primaire est présente
-                        if (!rowData.containsKey(primaryKeyColumn) || rowData.get(primaryKeyColumn).isEmpty()) {
-                            errors.append("Ligne ").append(currentLine)
-                                  .append(": Valeur de clé primaire manquante\n");
-                            continue;
-                        }
-                        
-                        // Vérifier si l'enregistrement existe déjà
-                        String primaryKeyValue = rowData.get(primaryKeyColumn);
-                        boolean recordExists = checkIfRecordExists(conn, tableName, primaryKeyColumn, primaryKeyValue);
-                        
-                        if (recordExists) {
-                            // Mettre à jour l'enregistrement existant
-                            updateRecord(conn, tableName, primaryKeyColumn, primaryKeyValue, rowData, headers);
-                            recordsUpdated++;
-                        } else {
-                            // Insérer un nouvel enregistrement
+                        // Traitement selon le type de clé primaire
+                        if ("id".equals(primaryKey)) {
+                            // Pour les tables avec ID auto-incrémenté, toujours insérer
                             insertRecord(conn, tableName, rowData, headers);
                             recordsInserted++;
+                        } else {
+                            // Pour les tables avec matricule, vérifier existence
+                            String keyValue = rowData.get(primaryKey);
+                            if (keyValue == null || keyValue.isEmpty()) {
+                                errors.append("Ligne ").append(currentLine)
+                                      .append(": Valeur de clé primaire manquante (").append(primaryKey).append(")\n");
+                                continue;
+                            }
+                            
+                            Map<String, String> existingRecord = getExistingRecord(conn, tableName, primaryKey, keyValue);
+                            
+                            if (existingRecord.isEmpty()) {
+                                // Nouvel enregistrement
+                                insertRecord(conn, tableName, rowData, headers);
+                                recordsInserted++;
+                            } else {
+                                // Vérifier si des modifications sont nécessaires
+                                if (hasChanges(existingRecord, rowData, headers)) {
+                                    updateRecord(conn, tableName, primaryKey, keyValue, rowData, headers);
+                                    recordsUpdated++;
+                                } else {
+                                    recordsUnchanged++;
+                                }
+                            }
                         }
+                        
                     } catch (Exception e) {
                         errors.append("Erreur à la ligne ").append(currentLine)
                               .append(": ").append(e.getMessage()).append("\n");
@@ -149,79 +205,94 @@ public class CSVProcessor {
                     }
                 }
                 
-                // Valider la transaction
                 conn.commit();
                 
             } catch (Exception e) {
-                // Annuler la transaction en cas d'erreur
                 conn.rollback();
                 throw e;
             } finally {
-                // Réactiver l'auto-commit
                 conn.setAutoCommit(true);
             }
         }
         
-        return new UpdateResult(recordsUpdated, recordsInserted, errors.toString());
+        return new EnhancedUpdateResult(recordsInserted, recordsUpdated, recordsUnchanged, errors.toString());
     }
     
-    private static boolean checkIfRecordExists(Connection conn, String tableName, 
-                                             String primaryKeyColumn, String primaryKeyValue) throws SQLException {
-        String sql = "SELECT COUNT(*) FROM " + tableName + " WHERE " + primaryKeyColumn + " = ?";
+    /**
+     * Compte le nombre de lignes dans un fichier CSV
+     */
+    private static int countCSVLines(File file) throws IOException {
+        int count = 0;
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            while (reader.readLine() != null) {
+                count++;
+            }
+        }
+        return count;
+    }
+    
+    /**
+     * Récupère un enregistrement existant de la base de données
+     */
+    private static Map<String, String> getExistingRecord(Connection conn, String tableName, 
+                                                        String primaryKey, String keyValue) throws SQLException {
+        Map<String, String> record = new HashMap<>();
+        String sql = "SELECT * FROM " + tableName + " WHERE " + primaryKey + " = ?";
         
         try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, primaryKeyValue);
+            stmt.setString(1, keyValue);
             
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    return rs.getInt(1) > 0;
+                    ResultSetMetaData metaData = rs.getMetaData();
+                    int columnCount = metaData.getColumnCount();
+                    
+                    for (int i = 1; i <= columnCount; i++) {
+                        String columnName = metaData.getColumnName(i);
+                        String value = rs.getString(i);
+                        record.put(columnName, value != null ? value : "");
+                    }
                 }
             }
         }
         
+        return record;
+    }
+    
+    /**
+     * Vérifie s'il y a des changements entre l'enregistrement existant et les nouvelles données
+     */
+    private static boolean hasChanges(Map<String, String> existing, Map<String, String> newData, String[] headers) {
+        for (String column : headers) {
+            String existingValue = existing.getOrDefault(column, "");
+            String newValue = newData.getOrDefault(column, "");
+            
+            if (!existingValue.equals(newValue)) {
+                return true;
+            }
+        }
         return false;
     }
     
-    private static void updateRecord(Connection conn, String tableName, String primaryKeyColumn, 
-                                   String primaryKeyValue, Map<String, String> rowData, String[] headers) throws SQLException {
-        
-        StringBuilder sql = new StringBuilder("UPDATE " + tableName + " SET ");
-        List<String> setClauses = new ArrayList<>();
-        List<String> values = new ArrayList<>();
-        
-        for (String column : headers) {
-            if (!column.equals(primaryKeyColumn) && rowData.containsKey(column)) {
-                setClauses.add(column + " = ?");
-                values.add(rowData.get(column));
-            }
-        }
-        
-        sql.append(String.join(", ", setClauses));
-        sql.append(" WHERE ").append(primaryKeyColumn).append(" = ?");
-        
-        try (PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
-            for (int i = 0; i < values.size(); i++) {
-                stmt.setString(i + 1, values.get(i));
-            }
-            stmt.setString(values.size() + 1, primaryKeyValue);
-            
-            stmt.executeUpdate();
-        }
-    }
-    
+    /**
+     * Insère un nouvel enregistrement
+     */
     private static void insertRecord(Connection conn, String tableName, Map<String, String> rowData, 
                                    String[] headers) throws SQLException {
-        
         List<String> columns = new ArrayList<>();
         List<String> placeholders = new ArrayList<>();
         List<String> values = new ArrayList<>();
         
         for (String column : headers) {
-            if (rowData.containsKey(column)) {
+            if (rowData.containsKey(column) && !rowData.get(column).isEmpty()) {
                 columns.add(column);
                 placeholders.add("?");
                 values.add(rowData.get(column));
             }
+        }
+        
+        if (columns.isEmpty()) {
+            throw new SQLException("Aucune donnée à insérer");
         }
         
         String sql = "INSERT INTO " + tableName + " (" + String.join(", ", columns) + ") " +
@@ -231,7 +302,37 @@ public class CSVProcessor {
             for (int i = 0; i < values.size(); i++) {
                 stmt.setString(i + 1, values.get(i));
             }
-            
+            stmt.executeUpdate();
+        }
+    }
+    
+    /**
+     * Met à jour un enregistrement existant
+     */
+    private static void updateRecord(Connection conn, String tableName, String primaryKey, 
+                                   String keyValue, Map<String, String> rowData, String[] headers) throws SQLException {
+        List<String> setClauses = new ArrayList<>();
+        List<String> values = new ArrayList<>();
+        
+        for (String column : headers) {
+            if (!column.equals(primaryKey) && rowData.containsKey(column)) {
+                setClauses.add(column + " = ?");
+                values.add(rowData.get(column));
+            }
+        }
+        
+        if (setClauses.isEmpty()) {
+            return; // Rien à mettre à jour
+        }
+        
+        String sql = "UPDATE " + tableName + " SET " + String.join(", ", setClauses) + 
+                     " WHERE " + primaryKey + " = ?";
+        
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            for (int i = 0; i < values.size(); i++) {
+                stmt.setString(i + 1, values.get(i));
+            }
+            stmt.setString(values.size() + 1, keyValue);
             stmt.executeUpdate();
         }
     }
@@ -241,22 +342,62 @@ public class CSVProcessor {
         void onProgress(double progress);
     }
     
-    // Classe pour retourner les résultats de la mise à jour
-    public static class UpdateResult {
-        private final int recordsUpdated;
+    // Classe pour les résultats de validation
+    public static class ValidationResult {
+        private boolean valid;
+        private List<String> missingColumns = new ArrayList<>();
+        private List<String> extraColumns = new ArrayList<>();
+        private List<String> tableColumns = new ArrayList<>();
+        private List<String> csvColumns = new ArrayList<>();
+        
+        // Getters et setters
+        public boolean isValid() { return valid; }
+        public void setValid(boolean valid) { this.valid = valid; }
+        
+        public List<String> getMissingColumns() { return missingColumns; }
+        public void setMissingColumns(List<String> missingColumns) { this.missingColumns = missingColumns; }
+        
+        public List<String> getExtraColumns() { return extraColumns; }
+        public void setExtraColumns(List<String> extraColumns) { this.extraColumns = extraColumns; }
+        
+        public List<String> getTableColumns() { return tableColumns; }
+        public void setTableColumns(List<String> tableColumns) { this.tableColumns = tableColumns; }
+        
+        public List<String> getCsvColumns() { return csvColumns; }
+        public void setCsvColumns(List<String> csvColumns) { this.csvColumns = csvColumns; }
+        
+        public String getErrorMessage() {
+            StringBuilder sb = new StringBuilder();
+            if (!missingColumns.isEmpty()) {
+                sb.append("Colonnes manquantes: ").append(String.join(", ", missingColumns)).append(". ");
+            }
+            if (!extraColumns.isEmpty()) {
+                sb.append("Colonnes en trop: ").append(String.join(", ", extraColumns)).append(".");
+            }
+            return sb.toString();
+        }
+    }
+    
+    // Classe pour les résultats améliorés
+    public static class EnhancedUpdateResult {
         private final int recordsInserted;
+        private final int recordsUpdated;
+        private final int recordsUnchanged;
         private final String errors;
         
-        public UpdateResult(int recordsUpdated, int recordsInserted, String errors) {
-            this.recordsUpdated = recordsUpdated;
+        public EnhancedUpdateResult(int recordsInserted, int recordsUpdated, int recordsUnchanged, String errors) {
             this.recordsInserted = recordsInserted;
+            this.recordsUpdated = recordsUpdated;
+            this.recordsUnchanged = recordsUnchanged;
             this.errors = errors;
         }
         
-        public int getRecordsUpdated() { return recordsUpdated; }
         public int getRecordsInserted() { return recordsInserted; }
+        public int getRecordsUpdated() { return recordsUpdated; }
+        public int getRecordsUnchanged() { return recordsUnchanged; }
         public String getErrors() { return errors; }
-        public int getTotalRecords() { return recordsUpdated + recordsInserted; }
+        public int getTotalRecords() { return recordsInserted + recordsUpdated + recordsUnchanged; }
         public boolean hasErrors() { return errors != null && !errors.isEmpty(); }
+        public boolean hasChanges() { return recordsInserted > 0 || recordsUpdated > 0; }
     }
 }

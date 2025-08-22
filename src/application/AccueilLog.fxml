@@ -21,25 +21,63 @@
         <Insets top="10" right="10" bottom="10" left="10"/>
     </padding>
 
-    <!-- Aperçu Logistique -->
+    <!-- Aperçu Logistique avec indicateurs simplifiés -->
     <TitledPane text="Aperçu Logistique" styleClass="section-pane" collapsible="false">
         <VBox spacing="10">
             <Label wrapText="true" text="Service responsable de la gestion des ressources matérielles et de l'approvisionnement."/>
             <TextFlow styleClass="info-text">
                 <Text text="Gestion des stocks, maintenance des équipements, et coordination des approvisionnements."/>
             </TextFlow>
+            
+            <!-- Indicateurs de statut rapide (optionnels) -->
+            <HBox spacing="20" alignment="CENTER_LEFT">
+                <VBox alignment="CENTER" spacing="5">
+                    <Label text="Stocks Critiques" styleClass="stat-label"/>
+                    <Label fx:id="stocksCritiquesCount" text="0" styleClass="stat-critical"/>
+                </VBox>
+                <VBox alignment="CENTER" spacing="5">
+                    <Label text="Maintenances Urgentes" styleClass="stat-label"/>
+                    <Label fx:id="maintenancesUrgentesCount" text="0" styleClass="stat-urgent"/>
+                </VBox>
+                <VBox alignment="CENTER" spacing="5">
+                    <Label text="Total Équipements" styleClass="stat-label"/>
+                    <Label fx:id="totalEquipementsCount" text="0" styleClass="stat-normal"/>
+                </VBox>
+            </HBox>
         </VBox>
     </TitledPane>
 
     <!-- État des Stocks -->
     <TitledPane text="État des Stocks" styleClass="section-pane" collapsible="false" VBox.vgrow="ALWAYS">
         <VBox spacing="10">
-        <HBox spacing="10" alignment="CENTER_RIGHT">
-            <Button fx:id="btnAjouterStock" text="Ajouter" styleClass="add-button"/>
-            <Button fx:id="btnMajStocks" text="Mettre à jour" styleClass="action-button"/>
-            <Button fx:id="btnValiderStocks" text="Valider" styleClass="validate-button"/>
-        </HBox>
-        <ScrollPane fitToWidth="true" fitToHeight="true" VBox.vgrow="ALWAYS">
+            <HBox spacing="10" alignment="CENTER_RIGHT">
+                <Button fx:id="btnAjouterStock" text="➕ Ajouter" styleClass="add-button"/>
+                <Button fx:id="btnMajStocks" text="✏️ Mettre à jour" styleClass="action-button"/>
+                <Button fx:id="btnValiderStocks" text="✅ Valider" styleClass="validate-button"/>
+            </HBox>
+            
+            <!-- Légende des statuts -->
+            <HBox spacing="15" alignment="CENTER_LEFT">
+                <Label text="Légende:" styleClass="legend-label"/>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: green; -fx-font-size: 16px;"/>
+                    <Label text="Normal" styleClass="legend-text"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: orange; -fx-font-size: 16px;"/>
+                    <Label text="Attention" styleClass="legend-text"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: red; -fx-font-size: 16px;"/>
+                    <Label text="Faible" styleClass="legend-text"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: purple; -fx-font-size: 16px;"/>
+                    <Label text="Critique" styleClass="legend-text"/>
+                </HBox>
+            </HBox>
+            
+            <ScrollPane fitToWidth="true" fitToHeight="true" VBox.vgrow="ALWAYS">
                 <TableView fx:id="stocksTable" VBox.vgrow="ALWAYS">
                     <columns>
                         <TableColumn text="Statut" fx:id="statutStockColumn" minWidth="60" maxWidth="80"/>
@@ -63,12 +101,38 @@
     <!-- Maintenance Planifiée -->
     <TitledPane text="Maintenance Planifiée" styleClass="section-pane" collapsible="false" VBox.vgrow="ALWAYS">
         <VBox spacing="10">
-        <HBox spacing="10" alignment="CENTER_RIGHT">
-            <Button fx:id="btnAjouterMaintenance" text="Ajouter" styleClass="add-button"/>
-            <Button fx:id="btnMajMaintenance" text="Mettre à jour" styleClass="action-button"/>
-            <Button fx:id="btnValiderMaintenance" text="Valider" styleClass="validate-button"/>
-        </HBox>
-        <ScrollPane fitToWidth="true" fitToHeight="true" VBox.vgrow="ALWAYS">
+            <HBox spacing="10" alignment="CENTER_RIGHT">
+                <Button fx:id="btnAjouterMaintenance" text="➕ Ajouter" styleClass="add-button"/>
+                <Button fx:id="btnMajMaintenance" text="✏️ Mettre à jour" styleClass="action-button"/>
+                <Button fx:id="btnValiderMaintenance" text="✅ Valider" styleClass="validate-button"/>
+            </HBox>
+            
+            <!-- Légende des statuts maintenance -->
+            <HBox spacing="15" alignment="CENTER_LEFT">
+                <Label text="Légende:" styleClass="legend-label"/>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: green; -fx-font-size: 16px;"/>
+                    <Label text="Programmée" styleClass="legend-text"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: orange; -fx-font-size: 16px;"/>
+                    <Label text="Proche" styleClass="legend-text"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: red; -fx-font-size: 16px;"/>
+                    <Label text="Urgente" styleClass="legend-text"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: purple; -fx-font-size: 16px;"/>
+                    <Label text="En retard" styleClass="legend-text"/>
+                </HBox>
+                <HBox spacing="5" alignment="CENTER_LEFT">
+                    <Label text="●" style="-fx-text-fill: blue; -fx-font-size: 16px;"/>
+                    <Label text="Effectuée" styleClass="legend-text"/>
+                </HBox>
+            </HBox>
+            
+            <ScrollPane fitToWidth="true" fitToHeight="true" VBox.vgrow="ALWAYS">
                 <TableView fx:id="maintenanceTable" VBox.vgrow="ALWAYS">
                     <columns>
                         <TableColumn text="Statut" fx:id="statutMaintenanceColumn" minWidth="60" maxWidth="80"/>

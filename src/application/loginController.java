@@ -61,20 +61,23 @@ public class loginController implements Initializable {
                 result = prepare.executeQuery();
                 
                 if (result.next()) {
+                    // Définir l'utilisateur et le service dans la session
+                    UserSession.setCurrentUserAndService(idField.getText(), serviceCombo.getValue());
+                    
                     // Déterminer le fichier FXML correspondant au service
                     String fxmlFile = "main.fxml"; // Valeur par défaut
                     switch (serviceCombo.getValue()) {
                         case "Logistique":
                             fxmlFile = "mainLog.fxml";
-                            UserSession.setCurrentUser(idField.getText());
                             break;
                         case "Opérations":
                             fxmlFile = "mainOps.fxml";
-                            UserSession.setCurrentUser(idField.getText());
                             break;
                         case "Ressources Humaines":
                             fxmlFile = "mainRh.fxml";
-                            UserSession.setCurrentUser(idField.getText());
+                            break;
+                        case "admin":
+                            fxmlFile = "main.fxml";
                             break;
                     }
                     
@@ -85,8 +88,12 @@ public class loginController implements Initializable {
                     
                     Stage stage = (Stage) submitBTN.getScene().getWindow();
                     stage.setScene(scene);
-                    stage.setTitle("Application de Gestion Militaire");
+                    stage.setTitle("Application de Gestion Militaire - " + serviceCombo.getValue());
                     stage.show();
+                    
+                    // Enregistrer la connexion réussie avec service
+                    HistoryManager.logConnexionAttempt(idField.getText(), true);
+                    
                 } else {
                     alert = new Alert(AlertType.ERROR);
                     alert.setTitle("Error Message");

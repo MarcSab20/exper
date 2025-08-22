@@ -24,15 +24,31 @@ import javafx.stage.Modality;
 import javafx.scene.control.ButtonBar;
 import javafx.event.ActionEvent;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.net.URL;
 import java.sql.*;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ResourceBundle;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import com.itextpdf.text.Document;
+import com.itextpdf.text.Element;
+import com.itextpdf.text.Font;
+import com.itextpdf.text.Paragraph;
+import com.itextpdf.text.pdf.PdfPTable;
+import com.itextpdf.text.pdf.PdfWriter;
+import com.itextpdf.text.pdf.PdfPCell;
+import com.itextpdf.text.BaseColor;
+import com.itextpdf.text.Phrase;
 
 /**
  * Contrôleur pour l'écran de gestion logistique qui gère les stocks et la maintenance
@@ -78,11 +94,15 @@ public class AccueilLogController implements Initializable {
     @FXML private TableColumn<Maintenance, String> descriptionMaintenanceColumn;
     @FXML private TableColumn<Maintenance, Boolean> effectueeColumn;
     @FXML private Button btnAjouterMaintenance;
+    @FXML private Label stocksCritiquesCount;
+    @FXML private Label maintenancesUrgentesCount;
+    @FXML private Label totalEquipementsCount;
     
     @FXML private Button btnMajStocks;
     @FXML private Button btnMajMaintenance;
     @FXML private Button btnValiderStocks;
     @FXML private Button btnValiderMaintenance;
+    
     
     // Collections de données
     private final ObservableList<Stock> stocks = FXCollections.observableArrayList();
@@ -119,6 +139,12 @@ public class AccueilLogController implements Initializable {
             
             // Rafraîchir les tables
             refreshTables();
+            
+         // AJOUT : Mettre à jour les indicateurs de statut
+            updateStatusIndicators();
+            
+            // Vérifier les alertes critiques au démarrage
+            checkCriticalAlerts();
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Erreur lors de l'initialisation", e);
             showAlert(Alert.AlertType.ERROR, "Erreur d'initialisation", 
@@ -313,6 +339,7 @@ public class AccueilLogController implements Initializable {
             if (result.isPresent() && result.get() == ButtonType.OK) {
                 stocks.remove(stock);
                 stocksTable.refresh();
+                updateStatusIndicators();
                 LOGGER.info("Stock supprimé: " + stock.getDesignation());
             }
         }
@@ -385,6 +412,308 @@ public class AccueilLogController implements Initializable {
     }
     
     /**
+     * Met à jour les indicateurs de statut rapide
+     */
+    private void updateStatusIndicators() {
+        // Compter les stocks critiques et faibles
+        int stocksCritiques = 0;
+        for (Stock stock : stocks) {
+            if (STATUT_VIOLET.equals(stock.getStatut()) || STATUT_ROUGE.equals(stock.getStatut())) {
+                stocksCritiques++;
+            }
+        }
+        
+        // Compter les maintenances urgentes
+        int maintenancesUrgentes = 0;
+        for (Maintenance maintenance : maintenances) {
+            if (!maintenance.isEffectuee() && 
+                (STATUT_VIOLET.equals(maintenance.getStatut()) || STATUT_ROUGE.equals(maintenance.getStatut()))) {
+                maintenancesUrgentes++;
+            }
+        }
+        
+        // Mettre à jour l'interface
+        if (stocksCritiquesCount != null) {
+            stocksCritiquesCount.setText(String.valueOf(stocksCritiques));
+        }
+        if (maintenancesUrgentesCount != null) {
+            maintenancesUrgentesCount.setText(String.valueOf(maintenancesUrgentes));
+        }
+        if (totalEquipementsCount != null) {
+            totalEquipementsCount.setText(String.valueOf(stocks.size()));
+        }
+    }
+
+    /**
+     * Exporte les stocks en PDF
+     */
+    @FXML
+    private void exporterStocksEnPDF() {
+        try {
+            Document document = new Document();
+            File file = new File("Stocks_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf");
+            PdfWriter.getInstance(document, new FileOutputStream(file));
+            
+            document.open();
+            
+            // Titre
+            Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
+            Paragraph title = new Paragraph("État des Stocks - Service Logistique", titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
+            document.add(title);
+            
+            Paragraph date = new Paragraph("Date: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+            date.setAlignment(Element.ALIGN_CENTER);
+            document.add(date);
+            document.add(new Paragraph(" "));
+            
+            // Statistiques résumées
+            Font sectionFont = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD);
+            document.add(new Paragraph("Résumé", sectionFont));
+            
+            Map<String, Integer> stats = new HashMap<>();
+            stats.put("Total", stocks.size());
+            stats.put("Normaux", 0);
+            stats.put("Attention", 0);
+            stats.put("Faibles", 0);
+            stats.put("Critiques", 0);
+            
+            for (Stock stock : stocks) {
+                switch (stock.getStatut()) {
+                    case STATUT_VERT:
+                        stats.put("Normaux", stats.get("Normaux") + 1);
+                        break;
+                    case STATUT_ORANGE:
+                        stats.put("Attention", stats.get("Attention") + 1);
+                        break;
+                    case STATUT_ROUGE:
+                        stats.put("Faibles", stats.get("Faibles") + 1);
+                        break;
+                    case STATUT_VIOLET:
+                        stats.put("Critiques", stats.get("Critiques") + 1);
+                        break;
+                }
+            }
+            
+            for (Map.Entry<String, Integer> entry : stats.entrySet()) {
+                document.add(new Paragraph(entry.getKey() + ": " + entry.getValue()));
+            }
+            document.add(new Paragraph(" "));
+            
+            // Tableau détaillé
+            document.add(new Paragraph("Détail des Stocks", sectionFont));
+            document.add(new Paragraph(" "));
+            
+            PdfPTable table = new PdfPTable(6);
+            table.setWidthPercentage(100);
+            
+            // En-têtes
+            String[] headers = {"Statut", "Désignation", "Quantité", "État", "Description", "Seuil Critique"};
+            for (String header : headers) {
+                PdfPCell cell = new PdfPCell(new Phrase(header));
+                cell.setBackgroundColor(BaseColor.LIGHT_GRAY);
+                cell.setHorizontalAlignment(Element.ALIGN_CENTER);
+                table.addCell(cell);
+            }
+            
+            // Données
+            for (Stock stock : stocks) {
+                // Statut avec couleur
+                PdfPCell statutCell = new PdfPCell(new Phrase(getStatutText(stock.getStatut())));
+                switch (stock.getStatut()) {
+                    case STATUT_VERT:
+                        statutCell.setBackgroundColor(BaseColor.GREEN);
+                        break;
+                    case STATUT_ORANGE:
+                        statutCell.setBackgroundColor(BaseColor.ORANGE);
+                        break;
+                    case STATUT_ROUGE:
+                        statutCell.setBackgroundColor(BaseColor.RED);
+                        break;
+                    case STATUT_VIOLET:
+                        statutCell.setBackgroundColor(BaseColor.MAGENTA);
+                        break;
+                }
+                table.addCell(statutCell);
+                
+                table.addCell(stock.getDesignation());
+                table.addCell(String.valueOf(stock.getQuantite()));
+                table.addCell(stock.getEtat());
+                table.addCell(stock.getDescription());
+                table.addCell(String.valueOf(stock.getValeurCritique()));
+            }
+            
+            document.add(table);
+            document.close();
+            
+            showAlert(Alert.AlertType.INFORMATION, "Export réussi", 
+                     "Export des stocks réalisé avec succès", 
+                     "Fichier: " + file.getAbsolutePath());
+            
+            HistoryManager.logCreation("Accueil Logistique", "Export PDF des stocks");
+            
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de l'export des stocks", e);
+            showAlert(Alert.AlertType.ERROR, "Erreur d'export", 
+                     "Impossible d'exporter les stocks", e.getMessage());
+        }
+    }
+
+    /**
+     * Exporte les maintenances en PDF
+     */
+    @FXML
+    private void exporterMaintenanceEnPDF() {
+        try {
+            Document document = new Document();
+            File file = new File("Maintenances_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf");
+            PdfWriter.getInstance(document, new FileOutputStream(file));
+            
+            document.open();
+            
+            // Titre
+            Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
+            Paragraph title = new Paragraph("Planning de Maintenance - Service Logistique", titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
+            document.add(title);
+            
+            Paragraph date = new Paragraph("Date: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+            date.setAlignment(Element.ALIGN_CENTER);
+            document.add(date);
+            document.add(new Paragraph(" "));
+            
+            // Statistiques résumées
+            Font sectionFont = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD);
+            document.add(new Paragraph("Résumé", sectionFont));
+            
+            Map<String, Integer> stats = new HashMap<>();
+            stats.put("Total", maintenances.size());
+            stats.put("Effectuées", 0);
+            stats.put("Programmées", 0);
+            stats.put("Proches", 0);
+            stats.put("Urgentes", 0);
+            stats.put("En retard", 0);
+            
+            for (Maintenance maintenance : maintenances) {
+                if (maintenance.isEffectuee()) {
+                    stats.put("Effectuées", stats.get("Effectuées") + 1);
+                } else {
+                    switch (maintenance.getStatut()) {
+                        case STATUT_VERT:
+                            stats.put("Programmées", stats.get("Programmées") + 1);
+                            break;
+                        case STATUT_ORANGE:
+                            stats.put("Proches", stats.get("Proches") + 1);
+                            break;
+                        case STATUT_ROUGE:
+                            stats.put("Urgentes", stats.get("Urgentes") + 1);
+                            break;
+                        case STATUT_VIOLET:
+                            stats.put("En retard", stats.get("En retard") + 1);
+                            break;
+                    }
+                }
+            }
+            
+            for (Map.Entry<String, Integer> entry : stats.entrySet()) {
+                document.add(new Paragraph(entry.getKey() + ": " + entry.getValue()));
+            }
+            document.add(new Paragraph(" "));
+            
+            // Tableau détaillé
+            document.add(new Paragraph("Détail des Maintenances", sectionFont));
+            document.add(new Paragraph(" "));
+            
+            PdfPTable table = new PdfPTable(6);
+            table.setWidthPercentage(100);
+            
+            // En-têtes
+            String[] headers = {"Statut", "Date", "Désignation", "Type", "Description", "Effectuée"};
+            for (String header : headers) {
+                PdfPCell cell = new PdfPCell(new Phrase(header));
+                cell.setBackgroundColor(BaseColor.LIGHT_GRAY);
+                cell.setHorizontalAlignment(Element.ALIGN_CENTER);
+                table.addCell(cell);
+            }
+            
+            // Données
+            for (Maintenance maintenance : maintenances) {
+                // Statut avec couleur
+                PdfPCell statutCell = new PdfPCell(new Phrase(getStatutMaintenanceText(maintenance.getStatut(), maintenance.isEffectuee())));
+                if (maintenance.isEffectuee()) {
+                    statutCell.setBackgroundColor(BaseColor.BLUE);
+                } else {
+                    switch (maintenance.getStatut()) {
+                        case STATUT_VERT:
+                            statutCell.setBackgroundColor(BaseColor.GREEN);
+                            break;
+                        case STATUT_ORANGE:
+                            statutCell.setBackgroundColor(BaseColor.ORANGE);
+                            break;
+                        case STATUT_ROUGE:
+                            statutCell.setBackgroundColor(BaseColor.RED);
+                            break;
+                        case STATUT_VIOLET:
+                            statutCell.setBackgroundColor(BaseColor.MAGENTA);
+                            break;
+                    }
+                }
+                table.addCell(statutCell);
+                
+                table.addCell(maintenance.getDate());
+                table.addCell(maintenance.getDesignation());
+                table.addCell(maintenance.getType());
+                table.addCell(maintenance.getDescription());
+                table.addCell(maintenance.isEffectuee() ? "Oui" : "Non");
+            }
+            
+            document.add(table);
+            document.close();
+            
+            showAlert(Alert.AlertType.INFORMATION, "Export réussi", 
+                     "Export des maintenances réalisé avec succès", 
+                     "Fichier: " + file.getAbsolutePath());
+            
+            HistoryManager.logCreation("Accueil Logistique", "Export PDF des maintenances");
+            
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de l'export des maintenances", e);
+            showAlert(Alert.AlertType.ERROR, "Erreur d'export", 
+                     "Impossible d'exporter les maintenances", e.getMessage());
+        }
+    }
+
+    /**
+     * Convertit le statut en texte lisible
+     */
+    private String getStatutText(String statut) {
+        switch (statut) {
+            case STATUT_VERT: return "Normal";
+            case STATUT_ORANGE: return "Attention";
+            case STATUT_ROUGE: return "Faible";
+            case STATUT_VIOLET: return "Critique";
+            default: return "Inconnu";
+        }
+    }
+
+    /**
+     * Convertit le statut de maintenance en texte lisible
+     */
+    private String getStatutMaintenanceText(String statut, boolean effectuee) {
+        if (effectuee) return "Effectuée";
+        
+        switch (statut) {
+            case STATUT_VERT: return "Programmée";
+            case STATUT_ORANGE: return "Proche";
+            case STATUT_ROUGE: return "Urgente";
+            case STATUT_VIOLET: return "En retard";
+            case STATUT_BLEU: return "Effectuée";
+            default: return "Inconnu";
+        }
+    }
+
+    
+    /**
      * Configure la colonne "Effectuée" avec des cases à cocher
      */
     private void configureEffectueeColumn() {
@@ -405,6 +734,7 @@ public class AccueilLogController implements Initializable {
                             updateMaintenanceStatus(maintenance);
                         }
                         getTableView().refresh();
+                        updateStatusIndicators();
                     });
                     setGraphic(checkBox);
                 } else {
@@ -474,6 +804,77 @@ public class AccueilLogController implements Initializable {
     }
     
     /**
+     * Vérifie et affiche les alertes critiques au démarrage
+     */
+    @FXML
+    private void checkCriticalAlerts() {
+        List<String> alertes = new ArrayList<>();
+        
+        // Vérifier les stocks critiques
+        for (Stock stock : stocks) {
+            if (STATUT_VIOLET.equals(stock.getStatut())) {
+                alertes.add("STOCK CRITIQUE: " + stock.getDesignation() + 
+                           " (Quantité: " + stock.getQuantite() + 
+                           ", Seuil: " + stock.getValeurCritique() + ")");
+            } else if (STATUT_ROUGE.equals(stock.getStatut())) {
+                alertes.add("STOCK FAIBLE: " + stock.getDesignation() + 
+                           " (Quantité: " + stock.getQuantite() + 
+                           ", Seuil: " + stock.getValeurCritique() + ")");
+            }
+        }
+        
+        // Vérifier les maintenances urgentes
+        for (Maintenance maintenance : maintenances) {
+            if (STATUT_VIOLET.equals(maintenance.getStatut())) {
+                alertes.add("MAINTENANCE DÉPASSÉE: " + maintenance.getDesignation() + 
+                           " (Date prévue: " + maintenance.getDate() + ")");
+            } else if (STATUT_ROUGE.equals(maintenance.getStatut())) {
+                alertes.add("MAINTENANCE URGENTE: " + maintenance.getDesignation() + 
+                           " (Date prévue: " + maintenance.getDate() + ")");
+            }
+        }
+        
+        // Afficher les alertes si nécessaire
+        if (!alertes.isEmpty()) {
+            showCriticalAlertsDialog(alertes);
+        }
+    }
+
+    /**
+     * Affiche un dialogue d'alertes critiques
+     */
+    private void showCriticalAlertsDialog(List<String> alertes) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("Alertes Critiques");
+        alert.setHeaderText("Attention ! Des éléments nécessitent votre attention immédiate :");
+        
+        // Créer le contenu avec toutes les alertes
+        VBox content = new VBox(10);
+        for (String alerte : alertes) {
+            Label alerteLabel = new Label("⚠️ " + alerte);
+            alerteLabel.setWrapText(true);
+            
+            // Couleur selon le type d'alerte
+            if (alerte.contains("CRITIQUE") || alerte.contains("DÉPASSÉE")) {
+                alerteLabel.setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
+            } else {
+                alerteLabel.setStyle("-fx-text-fill: orange; -fx-font-weight: bold;");
+            }
+            
+            content.getChildren().add(alerteLabel);
+        }
+        
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefHeight(200);
+        
+        alert.getDialogPane().setContent(scrollPane);
+        alert.getDialogPane().setPrefWidth(600);
+        
+        alert.showAndWait();
+    }
+    
+    /**
      * Supprime une maintenance du tableau
      */
     private void deleteMaintenance(Maintenance maintenance) {
@@ -487,6 +888,7 @@ public class AccueilLogController implements Initializable {
             if (result.isPresent() && result.get() == ButtonType.OK) {
                 maintenances.remove(maintenance);
                 maintenanceTable.refresh();
+                updateStatusIndicators();
                 LOGGER.info("Maintenance supprimée: " + maintenance.getDesignation());
             }
         }
@@ -498,6 +900,7 @@ public class AccueilLogController implements Initializable {
     private void loadDataFromDatabase() {
         loadStocksFromDatabase();
         loadMaintenanceFromDatabase();
+        updateStatusIndicators();
     }
     
     /**
@@ -708,6 +1111,7 @@ public class AccueilLogController implements Initializable {
             }
             // Rafraîchir l'affichage
             stocksTable.refresh();
+            updateStatusIndicators();
         });
     }
     
@@ -831,6 +1235,7 @@ public class AccueilLogController implements Initializable {
                 return updatedMaintenance;
             }
             return null;
+            
         });
         
         // Afficher le dialogue et traiter le résultat
@@ -852,6 +1257,7 @@ public class AccueilLogController implements Initializable {
             }
             // Rafraîchir l'affichage
             maintenanceTable.refresh();
+            updateStatusIndicators();
         });
     }
     
@@ -908,6 +1314,8 @@ public class AccueilLogController implements Initializable {
             
             // Rafraîchir le tableau pour refléter les changements
             stocksTable.refresh();
+            
+            updateStatusIndicators();
             
             // Désactiver le mode édition
             toggleEditModeStocks();
@@ -984,6 +1392,129 @@ public class AccueilLogController implements Initializable {
     }
     
     /**
+     * Génère un rapport de statut complet
+     */
+    @FXML
+    private void genererRapportStatut() {
+        try {
+            // Créer un document
+            Document document = new Document();
+            File file = new File("Rapport_Statut_Logistique_" + 
+                               LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf");
+            PdfWriter.getInstance(document, new FileOutputStream(file));
+            
+            document.open();
+            
+            // Titre
+            Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
+            Paragraph title = new Paragraph("Rapport de Statut Logistique", titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
+            document.add(title);
+            
+            Paragraph date = new Paragraph("Date: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+            date.setAlignment(Element.ALIGN_CENTER);
+            document.add(date);
+            document.add(new Paragraph(" "));
+            
+            // Section Stocks
+            Font sectionFont = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD);
+            document.add(new Paragraph("1. État des Stocks", sectionFont));
+            document.add(new Paragraph(" "));
+            
+            // Statistiques stocks
+            Map<String, Integer> stockStats = new HashMap<>();
+            stockStats.put("Total", stocks.size());
+            stockStats.put("Critiques", 0);
+            stockStats.put("Faibles", 0);
+            stockStats.put("Normaux", 0);
+            
+            for (Stock stock : stocks) {
+                switch (stock.getStatut()) {
+                    case STATUT_VIOLET:
+                        stockStats.put("Critiques", stockStats.get("Critiques") + 1);
+                        break;
+                    case STATUT_ROUGE:
+                        stockStats.put("Faibles", stockStats.get("Faibles") + 1);
+                        break;
+                    case STATUT_ORANGE:
+                    case STATUT_VERT:
+                        stockStats.put("Normaux", stockStats.get("Normaux") + 1);
+                        break;
+                }
+            }
+            
+            PdfPTable stockTable = new PdfPTable(2);
+            stockTable.setWidthPercentage(50);
+            stockTable.addCell("Statut");
+            stockTable.addCell("Nombre");
+            
+            for (Map.Entry<String, Integer> entry : stockStats.entrySet()) {
+                stockTable.addCell(entry.getKey());
+                stockTable.addCell(entry.getValue().toString());
+            }
+            
+            document.add(stockTable);
+            document.add(new Paragraph(" "));
+            
+            // Section Maintenances
+            document.add(new Paragraph("2. État des Maintenances", sectionFont));
+            document.add(new Paragraph(" "));
+            
+            // Statistiques maintenances
+            Map<String, Integer> maintenanceStats = new HashMap<>();
+            maintenanceStats.put("Total", maintenances.size());
+            maintenanceStats.put("Effectuées", 0);
+            maintenanceStats.put("En retard", 0);
+            maintenanceStats.put("Urgentes", 0);
+            maintenanceStats.put("Programmées", 0);
+            
+            for (Maintenance maintenance : maintenances) {
+                if (maintenance.isEffectuee()) {
+                    maintenanceStats.put("Effectuées", maintenanceStats.get("Effectuées") + 1);
+                } else {
+                    switch (maintenance.getStatut()) {
+                        case STATUT_VIOLET:
+                            maintenanceStats.put("En retard", maintenanceStats.get("En retard") + 1);
+                            break;
+                        case STATUT_ROUGE:
+                            maintenanceStats.put("Urgentes", maintenanceStats.get("Urgentes") + 1);
+                            break;
+                        case STATUT_ORANGE:
+                        case STATUT_VERT:
+                            maintenanceStats.put("Programmées", maintenanceStats.get("Programmées") + 1);
+                            break;
+                    }
+                }
+            }
+            
+            PdfPTable maintenanceTable = new PdfPTable(2);
+            maintenanceTable.setWidthPercentage(50);
+            maintenanceTable.addCell("Statut");
+            maintenanceTable.addCell("Nombre");
+            
+            for (Map.Entry<String, Integer> entry : maintenanceStats.entrySet()) {
+                maintenanceTable.addCell(entry.getKey());
+                maintenanceTable.addCell(entry.getValue().toString());
+            }
+            
+            document.add(maintenanceTable);
+            
+            document.close();
+            
+            showAlert(Alert.AlertType.INFORMATION, "Rapport généré", 
+                     "Le rapport de statut a été généré avec succès", 
+                     "Fichier: " + file.getAbsolutePath());
+            
+            LOGGER.info("Rapport de statut généré: " + file.getAbsolutePath());
+            
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de la génération du rapport", e);
+            showAlert(Alert.AlertType.ERROR, "Erreur", 
+                     "Impossible de générer le rapport", e.getMessage());
+        }
+    }
+    
+    /**
      * Enregistre les maintenances dans la base de données
      */
     private void saveMaintenanceToDatabase() {
@@ -1003,6 +1534,7 @@ public class AccueilLogController implements Initializable {
             
             showAlert(Alert.AlertType.INFORMATION, "Succès", 
                      "Les données de maintenance ont été enregistrées avec succès", null);
+            updateStatusIndicators();
             
             // Désactiver le mode édition
             toggleEditModeMaintenance();
