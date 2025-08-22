@@ -260,9 +260,22 @@ public class dashboardController {
             addTemporalChart("dotation_particuliere", "annee", "Dotations par Année", "Barre");
         }
         
-        // Graphique des maintenances par type si disponible
+        // Graphique des maintenances par type si disponible (corriger le nom de colonne)
         if (availableTables.contains("maintenance")) {
-            addDistributionChart("maintenance", "type_maintenance", "Maintenances par Type", "Barre");
+            // Vérifier d'abord si la colonne existe dans cette table
+            try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
+                DatabaseMetaData metaData = conn.getMetaData();
+                ResultSet columns = metaData.getColumns("master", null, "maintenance", "type");
+                if (columns.next()) {
+                    addDistributionChart("maintenance", "type", "Maintenances par Type", "Barre");
+                } else {
+                    // Essayer avec 'designation' ou un autre champ disponible
+                    columns = metaData.getColumns("master", null, "maintenance", "designation");
+                    if (columns.next()) {
+                        addDistributionChart("maintenance", "designation", "Maintenances par Désignation", "Barre");
+                    }
+                }
+            }
         }
         
         // Graphique de base sur le sexe (table commune)
@@ -408,6 +421,9 @@ public class dashboardController {
                     data.put(key, count);
                 }
             }
+        } catch (SQLException e) {
+            // Log l'erreur mais ne pas arrêter le processus
+            System.err.println("Erreur lors de la récupération des données pour " + tableName + "." + column + ": " + e.getMessage());
         }
         
         return data;
@@ -430,6 +446,9 @@ public class dashboardController {
                     data.put(period, count);
                 }
             }
+        } catch (SQLException e) {
+            // Log l'erreur mais ne pas arrêter le processus
+            System.err.println("Erreur lors de la récupération des données temporelles pour " + tableName + "." + timeColumn + ": " + e.getMessage());
         }
         
         return data;

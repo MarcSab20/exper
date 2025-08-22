@@ -2,6 +2,7 @@ package application;
 
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -11,24 +12,19 @@ import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
-import java.util.*;
+import javafx.stage.FileChooser;
+import javafx.stage.Stage;
 
-import com.itextpdf.text.BaseColor;
-import com.itextpdf.text.Document;
-import com.itextpdf.text.DocumentException;
-import com.itextpdf.text.Element;
-import com.itextpdf.text.Font;
-import com.itextpdf.text.Paragraph;
-import com.itextpdf.text.Phrase;
-import com.itextpdf.text.pdf.PdfPCell;
-import com.itextpdf.text.pdf.PdfPTable;
-import com.itextpdf.text.pdf.PdfWriter;
-
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.*;
+import java.util.List;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.sql.*;
+
+import com.itextpdf.text.*;
+import com.itextpdf.text.pdf.*;
 
 public class RequeteController {
     @FXML private ComboBox<String> colonneComboBox;
@@ -38,6 +34,7 @@ public class RequeteController {
     @FXML private ComboBox<String> formatSortieComboBox;
     @FXML private HBox optionsContainer;
     @FXML private StackPane resultsContainer;
+    @FXML private Label serviceLabel;
     
     // Nouveaux composants pour graphiques à 2 variables
     @FXML private ComboBox<String> colonneX;
@@ -73,10 +70,18 @@ public class RequeteController {
     private List<String> columnNames = new ArrayList<>();
     private String currentService;
     
+    private static final java.util.logging.Logger LOGGER = 
+        java.util.logging.Logger.getLogger(RequeteController.class.getName());
+    
     @FXML
     public void initialize() {
         // Obtenir le service actuel
         currentService = UserSession.getCurrentService();
+        
+        // Afficher le service dans l'interface
+        if (serviceLabel != null) {
+            serviceLabel.setText(currentService);
+        }
         
         // Initialiser les composants de valeur
         initializeValueComponents();
@@ -175,7 +180,6 @@ public class RequeteController {
     }
     
     private void updateGraphOptionsVisibility() {
-        // Cette méthode sera appelée quand on coche/décoche la case 2 variables
         updateOptionsContainer();
     }
     
@@ -917,7 +921,126 @@ public class RequeteController {
 
     @FXML
     private void exporterPDF() {
-        showAlert("Information", "La fonctionnalité d'export PDF sera implémentée prochainement");
+        // Vérifier s'il y a des résultats à exporter
+        if (resultsContainer.getChildren().isEmpty()) {
+            showAlert("Erreur", "Aucun résultat à exporter. Veuillez d'abord exécuter une requête.");
+            return;
+        }
+        
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Enregistrer le rapport PDF");
+        fileChooser.getExtensionFilters().add(
+            new FileChooser.ExtensionFilter("Fichiers PDF", "*.pdf")
+        );
+        fileChooser.setInitialFileName("Rapport_Requete_" + 
+            LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf");
+        
+        Stage stage = (Stage) resultsContainer.getScene().getWindow();
+        File file = fileChooser.showSaveDialog(stage);
+        
+        if (file != null) {
+            try {
+                exportToPDF(file);
+                showAlert("Succès", "Le rapport PDF a été généré avec succès dans :\n" + file.getAbsolutePath());
+                HistoryManager.logCreation("Requêtes", 
+                        "Export PDF d'une requête - Service: " + currentService);
+            } catch (Exception e) {
+                e.printStackTrace();
+                showAlert("Erreur", "Erreur lors de la génération du PDF: " + e.getMessage());
+            }
+        }
+    }
+    
+    private void exportToPDF(File file) throws Exception {
+        Document document = new Document();
+        PdfWriter.getInstance(document, new FileOutputStream(file));
+        
+        document.open();
+        
+        // Titre
+        Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
+        Paragraph title = new Paragraph("Rapport de Requête - " + currentService, titleFont);
+        title.setAlignment(Element.ALIGN_CENTER);
+        document.add(title);
+        
+        // Date et informations
+        Paragraph dateInfo = new Paragraph("Date: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + 
+                                         " | Service: " + currentService);
+        dateInfo.setAlignment(Element.ALIGN_CENTER);
+        document.add(dateInfo);
+        document.add(new Paragraph(" "));
+        
+        // Contraintes utilisées
+        Font sectionFont = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD);
+        document.add(new Paragraph("Contraintes appliquées:", sectionFont));
+        document.add(new Paragraph(" "));
+        
+        for (String contrainte : contraintes) {
+            document.add(new Paragraph("• " + contrainte));
+        }
+        document.add(new Paragraph(" "));
+        
+        // Format de sortie
+        document.add(new Paragraph("Format de sortie: " + formatSortieComboBox.getValue(), sectionFont));
+        document.add(new Paragraph(" "));
+        
+        // Données (selon le type de résultat)
+        exportResultsToPDF(document);
+        
+        document.close();
+    }
+    
+    private void exportResultsToPDF(Document document) throws Exception {
+        // Cette méthode sera appelée pour exporter les résultats spécifiques
+        // en fonction du type d'affichage (tableau, liste, etc.)
+        
+        if (!resultsContainer.getChildren().isEmpty()) {
+            if (resultsContainer.getChildren().get(0) instanceof TableView) {
+                exportTableToPDF(document, (TableView<?>) resultsContainer.getChildren().get(0));
+            } else if (resultsContainer.getChildren().get(0) instanceof ListView) {
+                exportListToPDF(document, (ListView<String>) resultsContainer.getChildren().get(0));
+            } else {
+                document.add(new Paragraph("Résultats sous forme de graphique - voir l'application pour la visualisation."));
+            }
+        }
+    }
+    
+    private void exportTableToPDF(Document document, TableView<?> tableView) throws Exception {
+        if (tableView.getColumns().isEmpty()) return;
+        
+        PdfPTable table = new PdfPTable(tableView.getColumns().size());
+        table.setWidthPercentage(100);
+        
+        // En-têtes
+        for (TableColumn<?, ?> column : tableView.getColumns()) {
+            PdfPCell cell = new PdfPCell(new Phrase(column.getText()));
+            cell.setBackgroundColor(BaseColor.LIGHT_GRAY);
+            cell.setHorizontalAlignment(Element.ALIGN_CENTER);
+            table.addCell(cell);
+        }
+        
+        // Données
+        for (Object item : tableView.getItems()) {
+            if (item instanceof Map) {
+                Map<String, String> row = (Map<String, String>) item;
+                for (TableColumn<?, ?> column : tableView.getColumns()) {
+                    String value = row.get(column.getText());
+                    table.addCell(value != null ? value : "");
+                }
+            }
+        }
+        
+        document.add(table);
+    }
+    
+    private void exportListToPDF(Document document, ListView<String> listView) throws Exception {
+        document.add(new Paragraph("Résultats de la requête:", 
+                                 new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD)));
+        document.add(new Paragraph(" "));
+        
+        for (String item : listView.getItems()) {
+            document.add(new Paragraph("• " + item));
+        }
     }
 
     private void showAlert(String title, String content) {
@@ -927,7 +1050,4 @@ public class RequeteController {
         alert.setContentText(content);
         alert.showAndWait();
     }
-    
-    private static final java.util.logging.Logger LOGGER = 
-        java.util.logging.Logger.getLogger(RequeteController.class.getName());
 }

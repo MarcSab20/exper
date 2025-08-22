@@ -4,84 +4,169 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 
-<BorderPane xmlns="http://javafx.com/javafx/15.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="application.RequeteSpecialeController">
-   <center>
-      <VBox spacing="10">
-         <padding>
-            <Insets bottom="20.0" left="20.0" right="20.0" top="20.0" />
-         </padding>
-         
-         <Label text="Requête Spéciale" style="-fx-font-size: 18px; -fx-font-weight: bold;" />
-         
-         <TitledPane text="Création de contraintes" collapsible="false">
-            <VBox spacing="10">
-               <HBox spacing="10" alignment="CENTER_LEFT">
-                  <Label text="Colonne:" />
-                  <ComboBox fx:id="colonneComboBox" prefWidth="150" />
-                  
-                  <Label text="Opérateur:" />
-                  <ComboBox fx:id="operateurComboBox" prefWidth="100" />
-                  
-                  <Label text="Valeur:" />
-                  <HBox fx:id="valueContainer" prefWidth="200" />
-               </HBox>
-               
-               <HBox spacing="10" alignment="CENTER_RIGHT">
-                  <Button text="Ajouter contrainte" onAction="#ajouterContrainte" />
-               </HBox>
-            </VBox>
-         </TitledPane>
-         
-         <TitledPane text="Contraintes définies" collapsible="false">
-            <VBox spacing="10">
-               <ListView fx:id="contraintesListView" prefHeight="100" />
-            </VBox>
-         </TitledPane>
-         
-         <TitledPane text="Format de sortie" collapsible="false">
-            <VBox spacing="10">
-               <HBox spacing="10" alignment="CENTER_LEFT">
-                  <Label text="Format:" />
-                  <ComboBox fx:id="formatSortieComboBox" prefWidth="150" />
-               </HBox>
-               
-               <HBox fx:id="optionsContainer" spacing="10" alignment="CENTER_LEFT" />
-            </VBox>
-         </TitledPane>
-         
-         <TitledPane text="Résultats" collapsible="false">
-            <VBox spacing="10">
-               <StackPane fx:id="resultsContainer" prefHeight="300" />
-               
-               <HBox spacing="10" alignment="CENTER_RIGHT">
-                  <Button text="Exécuter requête" onAction="#executerRequete" />
-                  <Button text="Exporter Excel" onAction="#exporterExcel" />
-                  <Button text="Exporter PDF" onAction="#exporterPDF" />
-               </HBox>
-            </VBox>
-         </TitledPane>
-      </VBox>
-   </center>
-   
-   <right>
-      <VBox spacing="10" prefWidth="500">
-         <padding>
-            <Insets bottom="20.0" left="10.0" right="20.0" top="20.0" />
-         </padding>
-         
-         <TitledPane text="Requêtes sauvegardées" collapsible="false">
-            <VBox spacing="10">
-               <TextField fx:id="nomRequeteTextField" promptText="Nom de la requête" />
-               
-               <HBox spacing="10" alignment="CENTER">
-                  <Button text="Sauvegarder" onAction="#sauvegarderRequete" />
-                  <Button text="Supprimer" onAction="#supprimerRequete" />
-                  <Button text="Exécuter" onAction="#executerRequeteSauvegardee" />
-               </HBox>
-               
-               <ListView fx:id="requetesSauvegardeesListView" prefHeight="300" />
-            </VBox>
-         </TitledPane>
-      </VBox>
-   </right>
-</BorderPane>
+<VBox xmlns="http://javafx.com/javafx"
+      xmlns:fx="http://javafx.com/fxml"
+      fx:controller="application.RequeteSpecialeController"
+      styleClass="requetes-container"
+      spacing="20">
+
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+
+    <!-- En-tête avec informations de service -->
+    <HBox spacing="20" alignment="CENTER_LEFT" styleClass="header-section">
+        <Label text="🔮 Requêtes Spéciales Avancées" styleClass="page-title"/>
+        <Separator orientation="VERTICAL"/>
+        <Label text="Service:" styleClass="service-label"/>
+        <Label fx:id="serviceLabel" text="Chargement..." styleClass="service-value"/>
+    </HBox>
+
+    <HBox spacing="20" VBox.vgrow="ALWAYS">
+        <!-- Partie gauche - Construction de requêtes -->
+        <VBox spacing="20" HBox.hgrow="ALWAYS">
+            
+            <!-- Section de construction des contraintes -->
+            <TitledPane text="🔍 Création des contraintes" styleClass="section-pane" expanded="true">
+                <VBox spacing="15">
+                    <HBox spacing="15" alignment="CENTER_LEFT">
+                        <VBox spacing="5">
+                            <Label text="Colonne:" styleClass="field-label"/>
+                            <ComboBox fx:id="colonneComboBox" prefWidth="180" promptText="Sélectionner une colonne"/>
+                        </VBox>
+                        
+                        <VBox spacing="5">
+                            <Label text="Opérateur:" styleClass="field-label"/>
+                            <ComboBox fx:id="operateurComboBox" prefWidth="120" promptText="Opérateur"/>
+                        </VBox>
+                        
+                        <VBox spacing="5">
+                            <Label text="Valeur(s):" styleClass="field-label"/>
+                            <HBox fx:id="valueContainer" prefWidth="250" minHeight="35"/>
+                        </VBox>
+                        
+                        <VBox spacing="5" alignment="BOTTOM_CENTER">
+                            <Label text=" "/> <!-- Spacer -->
+                            <Button text="➕ Ajouter" onAction="#ajouterContrainte" styleClass="add-constraint-button"/>
+                        </VBox>
+                    </HBox>
+                    
+                    <!-- Liste des contraintes -->
+                    <VBox spacing="5">
+                        <Label text="Contraintes définies:" styleClass="section-subtitle"/>
+                        <ListView fx:id="contraintesListView" prefHeight="120" styleClass="constraints-list"/>
+                    </VBox>
+                </VBox>
+            </TitledPane>
+
+            <!-- Section de format de sortie -->
+            <TitledPane text="⚙️ Configuration de la sortie" styleClass="section-pane" expanded="true">
+                <VBox spacing="15">
+                    <HBox spacing="15" alignment="CENTER_LEFT">
+                        <VBox spacing="5">
+                            <Label text="Format de sortie:" styleClass="field-label"/>
+                            <ComboBox fx:id="formatSortieComboBox" prefWidth="150" promptText="Format"/>
+                        </VBox>
+                        
+                        <Separator orientation="VERTICAL"/>
+                        
+                        <!-- Options spécifiques au format -->
+                        <HBox fx:id="optionsContainer" spacing="15" alignment="CENTER_LEFT"/>
+                    </HBox>
+                </VBox>
+            </TitledPane>
+
+            <!-- Section des résultats -->
+            <TitledPane text="📊 Résultats" styleClass="section-pane" expanded="true" VBox.vgrow="ALWAYS">
+                <VBox spacing="10">
+                    <!-- Boutons d'action -->
+                    <HBox spacing="15" alignment="CENTER">
+                        <Button text="🚀 Exécuter la Requête" onAction="#executerRequete" 
+                                styleClass="execute-button, primary-button"/>
+                        <Separator orientation="VERTICAL"/>
+                        <Button text="📄 Export PDF" onAction="#exporterPDF" 
+                                styleClass="export-button"/>
+                        <Button text="📊 Export Excel" onAction="#exporterExcel" 
+                                styleClass="export-button"/>
+                    </HBox>
+                    
+                    <Separator/>
+                    
+                    <!-- Zone d'affichage des résultats -->
+                    <StackPane fx:id="resultsContainer" VBox.vgrow="ALWAYS" styleClass="results-container">
+                        <VBox alignment="CENTER" spacing="10">
+                            <Label text="📋 Aucun résultat" styleClass="placeholder-title"/>
+                            <Label text="Configurez et exécutez une requête pour voir les résultats ici" 
+                                   styleClass="placeholder-description"/>
+                        </VBox>
+                    </StackPane>
+                </VBox>
+            </TitledPane>
+        </VBox>
+
+        <!-- Partie droite - Gestion des requêtes sauvegardées -->
+        <VBox spacing="20" prefWidth="400" minWidth="350">
+            
+            <!-- Section de sauvegarde -->
+            <TitledPane text="💾 Sauvegarder une requête" styleClass="section-pane" expanded="true">
+                <VBox spacing="15">
+                    <VBox spacing="5">
+                        <Label text="Nom de la requête:" styleClass="field-label"/>
+                        <TextField fx:id="nomRequeteTextField" promptText="Entrez un nom pour cette requête"/>
+                    </VBox>
+                    
+                    <HBox spacing="10" alignment="CENTER">
+                        <Button text="💾 Sauvegarder" onAction="#sauvegarderRequete" 
+                                styleClass="primary-button" prefWidth="120"/>
+                        <Button text="🔄 Charger" onAction="#executerRequeteSauvegardee" 
+                                styleClass="execute-button" prefWidth="120"/>
+                        <Button text="🗑️ Supprimer" onAction="#supprimerRequete" 
+                                styleClass="delete-button" prefWidth="120"/>
+                    </HBox>
+                </VBox>
+            </TitledPane>
+
+            <!-- Section des requêtes sauvegardées -->
+            <TitledPane text="📚 Requêtes sauvegardées" styleClass="section-pane" expanded="true" VBox.vgrow="ALWAYS">
+                <VBox spacing="10">
+                    <Label text="Cliquez sur une requête pour la sélectionner" styleClass="help-text"/>
+                    
+                    <ListView fx:id="requetesSauvegardeesListView" VBox.vgrow="ALWAYS" 
+                              styleClass="saved-queries-list" prefHeight="300">
+                        <placeholder>
+                            <VBox alignment="CENTER" spacing="10">
+                                <Label text="📁 Aucune requête sauvegardée" styleClass="placeholder-title"/>
+                                <Label text="Créez et sauvegardez des requêtes pour les retrouver ici" 
+                                       styleClass="placeholder-description"/>
+                            </VBox>
+                        </placeholder>
+                    </ListView>
+                </VBox>
+            </TitledPane>
+
+            <!-- Section d'aide -->
+            <TitledPane text="💡 Aide rapide" styleClass="help-section" expanded="false">
+                <VBox spacing="10">
+                    <Label text="Fonctionnalités spéciales:" styleClass="help-title"/>
+                    
+                    <VBox spacing="5">
+                        <Label text="✨ Sauvegarde de requêtes complexes" styleClass="help-text"/>
+                        <Label text="🔄 Rechargement rapide de requêtes fréquentes" styleClass="help-text"/>
+                        <Label text="📊 Graphiques à 1 ou 2 variables" styleClass="help-text"/>
+                        <Label text="📄 Export PDF avec mise en forme" styleClass="help-text"/>
+                        <Label text="🎯 Colonnes adaptées au service actuel" styleClass="help-text"/>
+                    </VBox>
+                    
+                    <Separator/>
+                    
+                    <Label text="Types de graphiques 2D:" styleClass="help-title"/>
+                    <VBox spacing="3">
+                        <Label text="• Nuage de points (variables numériques)" styleClass="help-text"/>
+                        <Label text="• Graphique croisé (catégories)" styleClass="help-text"/>
+                        <Label text="• Carte de chaleur (densité)" styleClass="help-text"/>
+                    </VBox>
+                </VBox>
+            </TitledPane>
+        </VBox>
+    </HBox>
+</VBox>

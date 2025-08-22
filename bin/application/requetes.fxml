@@ -23,7 +23,7 @@
     </HBox>
 
     <!-- Section de construction des contraintes -->
-    <TitledPane text="Création des contraintes" styleClass="section-pane" expanded="true">
+    <TitledPane text="🔧 Création des contraintes" styleClass="section-pane" expanded="true">
         <VBox spacing="15">
             <HBox spacing="15" alignment="CENTER_LEFT">
                 <VBox spacing="5">
@@ -56,7 +56,7 @@
     </TitledPane>
 
     <!-- Section de format de sortie -->
-    <TitledPane text="Configuration de la sortie" styleClass="section-pane" expanded="true">
+    <TitledPane text="⚙️ Configuration de la sortie" styleClass="section-pane" expanded="true">
         <VBox spacing="15">
             <HBox spacing="15" alignment="CENTER_LEFT">
                 <VBox spacing="5">
@@ -73,16 +73,16 @@
     </TitledPane>
 
     <!-- Section des résultats -->
-    <TitledPane text="Résultats" styleClass="section-pane" expanded="true" VBox.vgrow="ALWAYS">
+    <TitledPane text="📊 Résultats" styleClass="section-pane" expanded="true" VBox.vgrow="ALWAYS">
         <VBox spacing="10">
             <!-- Boutons d'action -->
             <HBox spacing="15" alignment="CENTER">
                 <Button text="🚀 Exécuter la Requête" onAction="#executerRequete" 
                         styleClass="execute-button, primary-button"/>
                 <Separator orientation="VERTICAL"/>
-                <Button text="📊 Export Excel" onAction="#exporterExcel" 
-                        styleClass="export-button"/>
                 <Button text="📄 Export PDF" onAction="#exporterPDF" 
+                        styleClass="export-button"/>
+                <Button text="📊 Export Excel" onAction="#exporterExcel" 
                         styleClass="export-button"/>
             </HBox>
             
@@ -141,6 +141,16 @@
                     <Label text="• Carte de chaleur" styleClass="help-text"/>
                 </VBox>
             </HBox>
+            
+            <Separator/>
+            
+            <Label text="Avantages des requêtes normales vs spéciales:" styleClass="help-title"/>
+            <VBox spacing="3">
+                <Label text="• Requêtes normales : Parfaites pour les recherches ponctuelles" styleClass="help-text"/>
+                <Label text="• Requêtes spéciales : Idéales pour sauvegarder vos recherches fréquentes" styleClass="help-text"/>
+                <Label text="• Export PDF disponible dans les deux cas" styleClass="help-text"/>
+                <Label text="• Colonnes adaptées automatiquement à votre service" styleClass="help-text"/>
+            </VBox>
         </VBox>
     </TitledPane>
 </VBox>
