@@ -1,6 +1,7 @@
 package application;
 
 import javafx.application.Platform;
+import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
@@ -29,14 +30,14 @@ public class MiseAJourController {
     @FXML private ComboBox<String> tableComboBox;
     @FXML private Label lastUpdateLabel;
     @FXML private Label tableInfoLabel;
-    @FXML private TableView<EnhancedUpdateRecord> updatesTable;
-    @FXML private TableColumn<EnhancedUpdateRecord, String> tableColumn;
-    @FXML private TableColumn<EnhancedUpdateRecord, Date> dateColumn;
-    @FXML private TableColumn<EnhancedUpdateRecord, String> statusColumn;
-    @FXML private TableColumn<EnhancedUpdateRecord, String> descriptionColumn;
-    @FXML private TableColumn<EnhancedUpdateRecord, Integer> insertedColumn;
-    @FXML private TableColumn<EnhancedUpdateRecord, Integer> updatedColumn;
-    @FXML private TableColumn<EnhancedUpdateRecord, Integer> unchangedColumn;
+    @FXML private TableView<UpdateRecord> updatesTable;
+    @FXML private TableColumn<UpdateRecord, String> tableColumn;
+    @FXML private TableColumn<UpdateRecord, Date> dateColumn;
+    @FXML private TableColumn<UpdateRecord, String> statusColumn;
+    @FXML private TableColumn<UpdateRecord, String> descriptionColumn;
+    @FXML private TableColumn<UpdateRecord, Integer> insertedColumn;
+    @FXML private TableColumn<UpdateRecord, Integer> updatedColumn;
+    @FXML private TableColumn<UpdateRecord, Integer> unchangedColumn;
     @FXML private TextField filePathField;
     @FXML private ProgressBar updateProgress;
     @FXML private Label statusLabel;
@@ -44,6 +45,7 @@ public class MiseAJourController {
     @FXML private Button startUpdateButton;
     @FXML private Button generateTemplateButton;
     @FXML private Button showSchemaButton;
+    
     
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
     private String currentService;
@@ -73,17 +75,27 @@ public class MiseAJourController {
         }
     }
     
+ // Remplacez votre méthode initializeColumns() dans MiseAJourController.java par cette version :
+
     private void initializeColumns() {
-        tableColumn.setCellValueFactory(new PropertyValueFactory<>("tableName"));
+        // Changez le type générique de EnhancedUpdateRecord vers UpdateRecord
+        // Et utilisez les nouvelles méthodes property()
+        
+        tableColumn.setCellValueFactory(cellData -> cellData.getValue().tableNameProperty());
         dateColumn.setCellValueFactory(new PropertyValueFactory<>("updateDate"));
-        statusColumn.setCellValueFactory(new PropertyValueFactory<>("status"));
-        descriptionColumn.setCellValueFactory(new PropertyValueFactory<>("description"));
-        insertedColumn.setCellValueFactory(new PropertyValueFactory<>("recordsInserted"));
-        updatedColumn.setCellValueFactory(new PropertyValueFactory<>("recordsUpdated"));
-        unchangedColumn.setCellValueFactory(new PropertyValueFactory<>("recordsUnchanged"));
+        statusColumn.setCellValueFactory(cellData -> cellData.getValue().statusProperty());
+        descriptionColumn.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
+        insertedColumn.setCellValueFactory(cellData -> cellData.getValue().recordsInsertedProperty().asObject());
+        updatedColumn.setCellValueFactory(cellData -> cellData.getValue().recordsUpdatedProperty().asObject());
+        
+        // Pour la colonne "unchangedColumn", créez une propriété calculée car elle n'existe pas dans UpdateRecord
+        unchangedColumn.setCellValueFactory(cellData -> {
+            // Calculer une valeur par défaut ou laisser vide pour UpdateRecord
+            return new SimpleIntegerProperty(0).asObject();
+        });
         
         // Formater la colonne date
-        dateColumn.setCellFactory(column -> new TableCell<EnhancedUpdateRecord, Date>() {
+        dateColumn.setCellFactory(column -> new TableCell<UpdateRecord, Date>() {
             @Override
             protected void updateItem(Date item, boolean empty) {
                 super.updateItem(item, empty);
@@ -96,7 +108,7 @@ public class MiseAJourController {
         });
         
         // Colorier la colonne statut
-        statusColumn.setCellFactory(column -> new TableCell<EnhancedUpdateRecord, String>() {
+        statusColumn.setCellFactory(column -> new TableCell<UpdateRecord, String>() {
             @Override
             protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
@@ -575,13 +587,13 @@ public class MiseAJourController {
         alert.showAndWait();
     }
     
-    private void showUpdateDetails(EnhancedUpdateRecord record) {
-        if (record.getDescription() != null && !record.getDescription().isEmpty()) {
+    private void showUpdateDetails(UpdateRecord newSelection) {
+        if (newSelection.getDescription() != null && !newSelection.getDescription().isEmpty()) {
             Alert alert = new Alert(Alert.AlertType.INFORMATION);
             alert.setTitle("Détails de la mise à jour");
-            alert.setHeaderText("Mise à jour du " + dateFormat.format(record.getUpdateDate()));
+            alert.setHeaderText("Mise à jour du " + dateFormat.format(newSelection.getUpdateDate()));
             
-            TextArea textArea = new TextArea(record.getDescription());
+            TextArea textArea = new TextArea(newSelection.getDescription());
             textArea.setEditable(false);
             textArea.setWrapText(true);
             textArea.setPrefHeight(150);
