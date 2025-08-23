@@ -5,8 +5,11 @@ import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
+import javafx.geometry.Insets;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
@@ -45,12 +48,14 @@ public class MiseAJourController {
     @FXML private Button startUpdateButton;
     @FXML private Button generateTemplateButton;
     @FXML private Button showSchemaButton;
-    
+    @FXML private Button loadUpdateHistory;
+    @FXML private Button showFullHistory;
     
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
     private String currentService;
     private TableSchemaManager.SchemaValidationResult lastValidation;
-
+    private static final int ROWS_PER_PAGE = 20;
+    
     @FXML
     public void initialize() {
         currentService = UserSession.getCurrentService();
@@ -84,7 +89,6 @@ public class MiseAJourController {
         tableColumn.setCellValueFactory(cellData -> cellData.getValue().tableNameProperty());
         dateColumn.setCellValueFactory(new PropertyValueFactory<>("updateDate"));
         statusColumn.setCellValueFactory(cellData -> cellData.getValue().statusProperty());
-        descriptionColumn.setCellValueFactory(cellData -> cellData.getValue().descriptionProperty());
         insertedColumn.setCellValueFactory(cellData -> cellData.getValue().recordsInsertedProperty().asObject());
         updatedColumn.setCellValueFactory(cellData -> cellData.getValue().recordsUpdatedProperty().asObject());
         
@@ -135,6 +139,32 @@ public class MiseAJourController {
                     }
                 }
             }
+        });
+        setupPagination();
+    }
+    
+    private void setupPagination() {
+        // Ajouter un listener pour limiter l'affichage des lignes
+        updatesTable.setRowFactory(tv -> {
+            TableRow<UpdateRecord> row = new TableRow<>();
+            
+            // Ajouter un menu contextuel pour voir les détails
+            ContextMenu contextMenu = new ContextMenu();
+            MenuItem detailsItem = new MenuItem("Voir les détails");
+            detailsItem.setOnAction(event -> {
+                if (!row.isEmpty()) {
+                    showUpdateDetails(row.getItem());
+                }
+            });
+            contextMenu.getItems().add(detailsItem);
+            
+            row.contextMenuProperty().bind(
+                javafx.beans.binding.Bindings.when(row.emptyProperty())
+                    .then((ContextMenu) null)
+                    .otherwise(contextMenu)
+            );
+            
+            return row;
         });
     }
     
@@ -419,6 +449,240 @@ public class MiseAJourController {
         }
     }
     
+
+    /**
+     * Affiche tout l'historique dans une nouvelle fenêtre
+     */
+    @FXML
+    private void showFullHistory() {
+        try {
+            // Créer une nouvelle fenêtre pour l'historique complet
+            Stage historyStage = new Stage();
+            historyStage.setTitle("Historique complet des mises à jour");
+            historyStage.initModality(Modality.APPLICATION_MODAL);
+            
+            VBox content = new VBox(10);
+            content.setPadding(new Insets(20));
+            
+            // Créer un nouveau TableView pour l'historique complet
+            TableView<UpdateRecord> fullHistoryTable = new TableView<>();
+            
+            // Configurer les colonnes
+            TableColumn<UpdateRecord, String> tableCol = new TableColumn<>("Table");
+            tableCol.setCellValueFactory(cellData -> cellData.getValue().tableNameProperty());
+            
+            TableColumn<UpdateRecord, Date> dateCol = new TableColumn<>("Date");
+            dateCol.setCellValueFactory(new PropertyValueFactory<>("updateDate"));
+            dateCol.setCellFactory(column -> new TableCell<UpdateRecord, Date>() {
+                @Override
+                protected void updateItem(Date item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                    } else {
+                        setText(dateFormat.format(item));
+                    }
+                }
+            });
+            
+            TableColumn<UpdateRecord, String> statusCol = new TableColumn<>("Statut");
+            statusCol.setCellValueFactory(cellData -> cellData.getValue().statusProperty());
+            statusCol.setCellFactory(column -> new TableCell<UpdateRecord, String>() {
+                @Override
+                protected void updateItem(String item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                        setStyle("");
+                    } else {
+                        setText(item);
+                        switch (item.toLowerCase()) {
+                            case "succès":
+                                setStyle("-fx-text-fill: green; -fx-font-weight: bold;");
+                                break;
+                            case "échec":
+                                setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
+                                break;
+                            case "partiel":
+                                setStyle("-fx-text-fill: orange; -fx-font-weight: bold;");
+                                break;
+                        }
+                    }
+                }
+            });
+            
+            TableColumn<UpdateRecord, Integer> insertedCol = new TableColumn<>("Nouveaux");
+            insertedCol.setCellValueFactory(cellData -> cellData.getValue().recordsInsertedProperty().asObject());
+            
+            TableColumn<UpdateRecord, Integer> updatedCol = new TableColumn<>("Modifiés");
+            updatedCol.setCellValueFactory(cellData -> cellData.getValue().recordsUpdatedProperty().asObject());
+            
+            fullHistoryTable.getColumns().addAll(tableCol, dateCol, statusCol, insertedCol, updatedCol);
+            
+            // Charger toutes les données
+            List<EnhancedUpdateRecord> allEnhancedUpdates = EnhancedDatabaseManager.getEnhancedUpdateHistory();
+            List<UpdateRecord> allUpdates = new ArrayList<>();
+            
+            for (EnhancedUpdateRecord enhanced : allEnhancedUpdates) {
+                UpdateRecord update = new UpdateRecord(
+                    enhanced.getId(),
+                    enhanced.getTableName(),
+                    new Timestamp(enhanced.getUpdateDate().getTime()),
+                    enhanced.getStatus(),
+                    enhanced.getDescription(),
+                    enhanced.getRecordsUpdated(),
+                    enhanced.getRecordsInserted()
+                );
+                allUpdates.add(update);
+            }
+            
+            fullHistoryTable.setItems(FXCollections.observableArrayList(allUpdates));
+            
+            // Configurer le menu contextuel pour les détails
+            fullHistoryTable.setRowFactory(tv -> {
+                TableRow<UpdateRecord> row = new TableRow<>();
+                ContextMenu contextMenu = new ContextMenu();
+                MenuItem detailsItem = new MenuItem("Voir les détails");
+                detailsItem.setOnAction(event -> {
+                    if (!row.isEmpty()) {
+                        showUpdateDetails(row.getItem());
+                    }
+                });
+                contextMenu.getItems().add(detailsItem);
+                
+                row.contextMenuProperty().bind(
+                    javafx.beans.binding.Bindings.when(row.emptyProperty())
+                        .then((ContextMenu) null)
+                        .otherwise(contextMenu)
+                );
+                
+                return row;
+            });
+            
+            Label countLabel = new Label("Total: " + allUpdates.size() + " mises à jour");
+            countLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
+            
+            Button closeButton = new Button("Fermer");
+            closeButton.setOnAction(e -> historyStage.close());
+            
+            content.getChildren().addAll(countLabel, fullHistoryTable, closeButton);
+            VBox.setVgrow(fullHistoryTable, Priority.ALWAYS);
+            
+            Scene scene = new Scene(content, 800, 600);
+            historyStage.setScene(scene);
+            historyStage.show();
+            
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de l'affichage de l'historique complet", e);
+            showAlert(Alert.AlertType.ERROR, "Erreur", "Erreur d'affichage", 
+                     "Impossible d'afficher l'historique complet: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Amélioration de la méthode de mise à jour pour utiliser REPLACE INTO
+     */
+    private void executeEnhancedUpdate(File csvFile, String tableName) {
+        try {
+            // Utiliser une approche REPLACE INTO pour éviter les conflits
+            Connection conn = DatabaseManager.getConnection();
+            conn.setAutoCommit(false);
+            
+            try {
+                // Vider d'abord la table si c'est une mise à jour complète
+                String truncateQuery = "DELETE FROM " + tableName;
+                try (PreparedStatement stmt = conn.prepareStatement(truncateQuery)) {
+                    stmt.executeUpdate();
+                }
+                
+                // Puis insérer les nouvelles données
+                CSVProcessor.EnhancedUpdateResult result = 
+                    CSVProcessor.processEnhancedCSVUpdate(csvFile, tableName, 
+                        progress -> Platform.runLater(() -> updateProgress.setProgress(progress)));
+                
+                conn.commit();
+                
+                // Afficher le résultat
+                Platform.runLater(() -> {
+                    updateProgress.setVisible(false);
+                    
+                    if (result.hasErrors()) {
+                        showUpdateResultDialog(result);
+                    } else {
+                        showAlert(Alert.AlertType.INFORMATION, "Succès", "Mise à jour terminée", 
+                                  String.format("✅ %d enregistrements traités avec succès!", 
+                                              result.getTotalRecords()));
+                    }
+                    
+                    loadUpdateHistory();
+                    updateTableInfo();
+                    setControlsDisabled(false);
+                });
+                
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+            
+        } catch (Exception e) {
+            Platform.runLater(() -> {
+                updateProgress.setVisible(false);
+                showAlert(Alert.AlertType.ERROR, "Erreur", "Échec de la mise à jour", 
+                          "La mise à jour a échoué: " + e.getMessage());
+                setControlsDisabled(false);
+            });
+        }
+    }
+
+    /**
+     * Correction pour les requêtes multi-tables
+     */
+    private void debugMultiTableQuery() {
+        // Ajouter cette méthode pour débugger les requêtes multi-tables
+        String currentService = UserSession.getCurrentService();
+        List<String> tables = ServicePermissions.getTablesForService(currentService);
+        
+        LOGGER.info("=== DEBUG REQUÊTES MULTI-TABLES ===");
+        LOGGER.info("Service actuel: " + currentService);
+        LOGGER.info("Tables disponibles: " + String.join(", ", tables));
+        
+        // Vérifier la présence de la colonne matricule dans chaque table
+        try (Connection conn = DatabaseManager.getConnection()) {
+            for (String tableName : tables) {
+                Set<String> columns = TableSchemaManager.getTableColumnNames(tableName);
+                boolean hasMatricule = columns.contains("matricule");
+                LOGGER.info("Table " + tableName + " - Matricule présent: " + hasMatricule + 
+                           " - Colonnes: " + columns.size());
+                
+                if (!hasMatricule) {
+                    LOGGER.warning("⚠️ Table " + tableName + " n'a pas de colonne 'matricule' pour les jointures");
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors du debug des tables", e);
+        }
+    }
+
+    /**
+     * Méthode pour tester une requête simple avant une requête complexe
+     */
+    private void testSimpleQuery(String tableName) {
+        try (Connection conn = DatabaseManager.getConnection()) {
+            String testQuery = "SELECT COUNT(*) FROM " + tableName + " LIMIT 1";
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(testQuery)) {
+                if (rs.next()) {
+                    int count = rs.getInt(1);
+                    LOGGER.info("Table " + tableName + " - Nombre d'enregistrements: " + count);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Erreur lors du test de la table " + tableName, e);
+        }
+    }
+    
     @FXML
     private void startUpdate() {
         if (lastValidation == null || !lastValidation.isValid()) {
@@ -518,20 +782,43 @@ public class MiseAJourController {
         updateThread.start();
     }
     
-    // CORRECTION : Améliorer la méthode de chargement de l'historique
     private void loadUpdateHistory() {
         try {
-            // Forcer un délai pour s'assurer que l'enregistrement est bien en base
             Platform.runLater(() -> {
                 try {
                     // Récupérer l'historique mis à jour
-                    List<EnhancedUpdateRecord> updates = EnhancedDatabaseManager.getEnhancedUpdateHistory();
+                    List<EnhancedUpdateRecord> enhancedUpdates = EnhancedDatabaseManager.getEnhancedUpdateHistory();
+                    
+                    // Convertir les EnhancedUpdateRecord en UpdateRecord
+                    List<UpdateRecord> updates = new ArrayList<>();
+                    for (EnhancedUpdateRecord enhanced : enhancedUpdates) {
+                        UpdateRecord update = new UpdateRecord(
+                            enhanced.getId(),
+                            enhanced.getTableName(),
+                            new Timestamp(enhanced.getUpdateDate().getTime()),
+                            enhanced.getStatus(),
+                            enhanced.getDescription(), // Gardé pour les détails
+                            enhanced.getRecordsUpdated(),
+                            enhanced.getRecordsInserted()
+                        );
+                        updates.add(update);
+                    }
+                    
+                    // Limiter l'affichage aux dernières mises à jour
+                    int maxItems = Math.min(updates.size(), ROWS_PER_PAGE);
+                    List<UpdateRecord> limitedUpdates = updates.subList(0, maxItems);
                     
                     // Mettre à jour la table
-                    updatesTable.setItems(FXCollections.observableArrayList(updates));
+                    updatesTable.setItems(FXCollections.observableArrayList(limitedUpdates));
                     updatesTable.refresh();
                     
-                    LOGGER.info("Historique rechargé: " + updates.size() + " enregistrements");
+                    // Afficher un message s'il y a plus d'éléments
+                    if (updates.size() > ROWS_PER_PAGE) {
+                        statusLabel.setText(String.format("Affichage des %d dernières mises à jour sur %d total", 
+                                                         maxItems, updates.size()));
+                    }
+                    
+                    LOGGER.info("Historique rechargé: " + limitedUpdates.size() + " enregistrements affichés sur " + updates.size());
                     
                 } catch (Exception e) {
                     LOGGER.log(Level.SEVERE, "Erreur lors du rechargement de l'historique", e);
@@ -587,19 +874,60 @@ public class MiseAJourController {
         alert.showAndWait();
     }
     
-    private void showUpdateDetails(UpdateRecord newSelection) {
-        if (newSelection.getDescription() != null && !newSelection.getDescription().isEmpty()) {
+    private void showUpdateDetails(UpdateRecord updateRecord) {
+        if (updateRecord.getDescription() != null && !updateRecord.getDescription().isEmpty()) {
             Alert alert = new Alert(Alert.AlertType.INFORMATION);
             alert.setTitle("Détails de la mise à jour");
-            alert.setHeaderText("Mise à jour du " + dateFormat.format(newSelection.getUpdateDate()));
+            alert.setHeaderText("Mise à jour du " + dateFormat.format(updateRecord.getUpdateDate()));
             
-            TextArea textArea = new TextArea(newSelection.getDescription());
+            // Créer un contenu formaté
+            VBox content = new VBox(10);
+            
+            // Informations principales
+            GridPane infoGrid = new GridPane();
+            infoGrid.setHgap(10);
+            infoGrid.setVgap(5);
+            
+            infoGrid.add(new Label("Table:"), 0, 0);
+            infoGrid.add(new Label(updateRecord.getTableName()), 1, 0);
+            
+            infoGrid.add(new Label("Statut:"), 0, 1);
+            Label statusLabel = new Label(updateRecord.getStatus());
+            switch (updateRecord.getStatus().toLowerCase()) {
+                case "succès":
+                    statusLabel.setStyle("-fx-text-fill: green; -fx-font-weight: bold;");
+                    break;
+                case "échec":
+                    statusLabel.setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
+                    break;
+                case "partiel":
+                    statusLabel.setStyle("-fx-text-fill: orange; -fx-font-weight: bold;");
+                    break;
+            }
+            infoGrid.add(statusLabel, 1, 1);
+            
+            infoGrid.add(new Label("Nouveaux:"), 0, 2);
+            infoGrid.add(new Label(String.valueOf(updateRecord.getRecordsInserted())), 1, 2);
+            
+            infoGrid.add(new Label("Modifiés:"), 0, 3);
+            infoGrid.add(new Label(String.valueOf(updateRecord.getRecordsUpdated())), 1, 3);
+            
+            content.getChildren().add(infoGrid);
+            
+            // Description détaillée
+            Label descLabel = new Label("Description:");
+            descLabel.setStyle("-fx-font-weight: bold;");
+            content.getChildren().add(descLabel);
+            
+            TextArea textArea = new TextArea(updateRecord.getDescription());
             textArea.setEditable(false);
             textArea.setWrapText(true);
             textArea.setPrefHeight(150);
+            content.getChildren().add(textArea);
             
-            alert.getDialogPane().setContent(textArea);
+            alert.getDialogPane().setContent(content);
             alert.getDialogPane().setPrefWidth(500);
+            alert.getDialogPane().setPrefHeight(400);
             
             alert.showAndWait();
         }

@@ -90,7 +90,6 @@
                     <TableColumn text="Table" fx:id="tableColumn" prefWidth="150"/>
                     <TableColumn text="Date" fx:id="dateColumn" prefWidth="150"/>
                     <TableColumn text="Statut" fx:id="statusColumn" prefWidth="80"/>
-                    <TableColumn text="Description" fx:id="descriptionColumn" prefWidth="200"/>
                     <TableColumn text="Nouveaux" fx:id="insertedColumn" prefWidth="80"/>
                     <TableColumn text="Modifiés" fx:id="updatedColumn" prefWidth="80"/>
                     <TableColumn text="Inchangés" fx:id="unchangedColumn" prefWidth="80"/>
@@ -105,6 +104,11 @@
                     <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
                 </columnResizePolicy>
             </TableView>
+            <HBox spacing="10" alignment="CENTER_LEFT" styleClass="pagination-info">
+			    <Label text="ℹ️ Affichage limité aux 20 dernières mises à jour" styleClass="pagination-label"/>
+			    <Button text="🔄 Actualiser" onAction="#loadUpdateHistory" styleClass="refresh-button"/>
+			    <Button text="📋 Voir tout l'historique" onAction="#showFullHistory" styleClass="show-all-button"/>
+			</HBox>
         </VBox>
     </TitledPane>
 

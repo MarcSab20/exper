@@ -122,84 +122,87 @@ public class MultiTableQueryManager {
      * Construit une requête avec JOINs automatiques
      */
     private static String buildJoinQuery(List<String> tables, List<String> usedColumns, 
-                                       List<String> constraints, String formatSortie) {
-        StringBuilder query = new StringBuilder();
-        
-        // SELECT clause
-        query.append("SELECT ");
-        
-        if ("Graphique".equals(formatSortie)) {
-            // Pour les graphiques, on a besoin d'un COUNT et du GROUP BY
-            if (usedColumns.size() == 1) {
-                query.append("COUNT(*) AS count, ");
-                query.append(buildQualifiedColumnName(usedColumns.get(0), tables));
-            } else {
-                // Pour les graphiques à 2 variables
-                query.append(buildQualifiedColumnName(usedColumns.get(0), tables)).append(", ");
-                query.append(buildQualifiedColumnName(usedColumns.get(1), tables));
-                if (usedColumns.size() > 2) {
-                    query.append(", COUNT(*) AS count");
-                }
-            }
-        } else {
-            // Pour les listes et tableaux
-            List<String> qualifiedColumns = new ArrayList<>();
-            for (String column : usedColumns) {
-                qualifiedColumns.add(buildQualifiedColumnName(column, tables));
-            }
-            query.append(String.join(", ", qualifiedColumns));
-        }
-        
-        // FROM clause avec JOINs
-        query.append(" FROM ");
-        
-        if (tables.size() == 1) {
-            // Une seule table
-            query.append(tables.get(0));
-        } else {
-            // Plusieurs tables - construire les JOINs
-            String mainTable = findMainTable(tables);
-            query.append(mainTable);
-            
-            for (String table : tables) {
-                if (!table.equals(mainTable)) {
-                    query.append(" LEFT JOIN ").append(table);
-                    query.append(" ON ").append(mainTable).append(".matricule = ").append(table).append(".matricule");
-                }
-            }
-        }
-        
-        // WHERE clause
-        if (!constraints.isEmpty()) {
-            query.append(" WHERE ");
-            List<String> qualifiedConstraints = new ArrayList<>();
-            
-            for (String constraint : constraints) {
-                String qualifiedConstraint = qualifyConstraint(constraint, tables);
-                qualifiedConstraints.add(qualifiedConstraint);
-            }
-            
-            query.append(String.join(" AND ", qualifiedConstraints));
-        }
-        
-        // GROUP BY pour les graphiques
-        if ("Graphique".equals(formatSortie)) {
-            query.append(" GROUP BY ");
-            if (usedColumns.size() == 1) {
-                query.append(buildQualifiedColumnName(usedColumns.get(0), tables));
-            } else {
-                List<String> groupByColumns = new ArrayList<>();
-                for (String column : usedColumns) {
-                    if (!column.equalsIgnoreCase("count")) {
-                        groupByColumns.add(buildQualifiedColumnName(column, tables));
-                    }
-                }
-                query.append(String.join(", ", groupByColumns));
-            }
-        }
-        
-        return query.toString();
+    	List<String> constraints, String formatSortie) {
+    	StringBuilder query = new StringBuilder();
+	
+    	// SELECT clause
+    	query.append("SELECT ");
+	
+    	if ("Graphique".equals(formatSortie)) {
+    		// Pour les graphiques, on a besoin d'un COUNT et du GROUP BY
+    		if (usedColumns.size() == 1) {
+    			query.append("COUNT(*) AS count, ");
+    			query.append(buildQualifiedColumnName(usedColumns.get(0), tables));
+    		} else {
+    			// Pour les graphiques à 2 variables
+    			query.append(buildQualifiedColumnName(usedColumns.get(0), tables)).append(", ");
+    			query.append(buildQualifiedColumnName(usedColumns.get(1), tables));
+    			if (usedColumns.size() > 2) {
+    				query.append(", COUNT(*) AS count");
+    			}
+    		}
+    	} else {
+    		// Pour les listes et tableaux
+    		List<String> qualifiedColumns = new ArrayList<>();
+    		for (String column : usedColumns) {
+    			qualifiedColumns.add(buildQualifiedColumnName(column, tables));
+    		}
+    		query.append(String.join(", ", qualifiedColumns));
+    	}
+	
+    	// FROM clause avec JOINs INNER au lieu de LEFT JOIN pour éviter les valeurs nulles
+    	query.append(" FROM ");
+	
+    	if (tables.size() == 1) {
+    		// Une seule table
+    		query.append(tables.get(0));
+    	} else {
+    		// Plusieurs tables - construire les JOINs
+    		String mainTable = findMainTable(tables);
+    		query.append(mainTable);
+	
+    		for (String table : tables) {
+    			if (!table.equals(mainTable)) {
+    				// Utiliser INNER JOIN au lieu de LEFT JOIN pour de meilleures performances
+    				// et éviter les résultats avec des valeurs nulles
+    				query.append(" INNER JOIN ").append(table);
+    				query.append(" ON ").append(mainTable).append(".matricule = ").append(table).append(".matricule");
+    			}
+    		}
+    	}
+	
+    	// WHERE clause
+    	if (!constraints.isEmpty()) {
+    		query.append(" WHERE ");
+    		List<String> qualifiedConstraints = new ArrayList<>();
+	
+    		for (String constraint : constraints) {
+    			String qualifiedConstraint = qualifyConstraint(constraint, tables);
+    			qualifiedConstraints.add(qualifiedConstraint);
+    		}
+	
+    		query.append(String.join(" AND ", qualifiedConstraints));
+    	}
+	
+    	// GROUP BY pour les graphiques
+    	if ("Graphique".equals(formatSortie)) {
+    		query.append(" GROUP BY ");
+    		if (usedColumns.size() == 1) {
+    			query.append(buildQualifiedColumnName(usedColumns.get(0), tables));
+    		} else {
+    			List<String> groupByColumns = new ArrayList<>();
+    			for (String column : usedColumns) {
+    				if (!column.equalsIgnoreCase("count")) {
+    					groupByColumns.add(buildQualifiedColumnName(column, tables));
+    				}
+    			}
+    			query.append(String.join(", ", groupByColumns));
+    		}
+    	}
+
+    	return query.toString();
     }
+   
     
     /**
      * Construit un nom de colonne qualifié (table.colonne)
