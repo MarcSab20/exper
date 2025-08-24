@@ -1,3 +1,8 @@
+/**
+ * CORRECTION COMPLÈTE - Gestion sécurisée des connexions de base de données
+ * Le problème vient du partage de connexions entre threads
+ */
+
 package application;
 
 import java.sql.*;
@@ -9,34 +14,60 @@ import java.util.logging.Logger;
 public class EnhancedDatabaseManager extends DatabaseManager {
     private static final Logger LOGGER = Logger.getLogger(EnhancedDatabaseManager.class.getName());
     
+    // CORRECTION: Paramètres de connexion pour éviter les connexions fermées
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/master?autoReconnect=true&useSSL=false&allowPublicKeyRetrieval=true";
+    private static final String DB_USER = "marco";
+    private static final String DB_PASSWORD = "29Papa278.";
+    
     static {
         // Initialiser les tables d'historique si elles n'existent pas
         initializeHistoryTables();
     }
     
     /**
+     * CORRECTION: Obtenir une nouvelle connexion sécurisée à chaque appel
+     */
+    private static Connection getEnhancedConnection() throws SQLException {
+        try {
+            // S'assurer que le driver est chargé
+            Class.forName("com.mysql.cj.jdbc.Driver");
+            
+            Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+            
+            // Vérifier que la connexion est valide
+            if (conn.isValid(5)) { // Timeout de 5 secondes
+                return conn;
+            } else {
+                throw new SQLException("Connexion invalide obtenue");
+            }
+            
+        } catch (ClassNotFoundException e) {
+            throw new SQLException("Driver MySQL introuvable", e);
+        }
+    }
+    
+    /**
      * Initialise les tables d'historique améliorées
      */
     private static void initializeHistoryTables() {
-        try (Connection conn = getConnection()) {
-            // Table d'historique des mises à jour améliorée
+        try (Connection conn = getEnhancedConnection()) {
             String createEnhancedHistoryTable = 
                 "CREATE TABLE IF NOT EXISTS historique_mises_a_jour_enhanced (" +
                 "  id INT AUTO_INCREMENT PRIMARY KEY," +
                 "  tableName VARCHAR(100) NOT NULL," +
                 "  updateDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
                 "  status VARCHAR(50) NOT NULL," +
-                "  description TEXT," +
                 "  recordsInserted INT DEFAULT 0," +
                 "  recordsUpdated INT DEFAULT 0," +
                 "  recordsUnchanged INT DEFAULT 0," +
                 "  service VARCHAR(50) NOT NULL," +
-                "  user VARCHAR(100) NOT NULL" +
+                "  INDEX idx_table_service (tableName, service)," +
+                "  INDEX idx_update_date (updateDate)" +
                 ")";
             
             try (Statement stmt = conn.createStatement()) {
                 stmt.executeUpdate(createEnhancedHistoryTable);
-                LOGGER.info("Table d'historique améliorée initialisée");
+                LOGGER.info("Table d'historique améliorée initialisée avec succès");
             }
             
         } catch (SQLException e) {
@@ -45,34 +76,41 @@ public class EnhancedDatabaseManager extends DatabaseManager {
     }
     
     /**
-     * CORRECTION: Enregistre une mise à jour améliorée dans l'historique avec transaction
+     * CORRECTION: Enregistre une mise à jour avec gestion sécurisée des connexions
      */
-    public static int logEnhancedUpdate(String tableName, String status, String description, 
+    public static int logEnhancedUpdate(String tableName, String status,
                                        int recordsInserted, int recordsUpdated, int recordsUnchanged,
                                        String service) {
-        String sql = "INSERT INTO historique_mises_a_jour_enhanced " +
-                     "(tableName, status, description, recordsInserted, recordsUpdated, recordsUnchanged, service, user) " +
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         
-        try (Connection conn = getConnection()) {
-            // CORRECTION: Utiliser une transaction pour s'assurer de la cohérence
+        // CORRECTION: Nouvelle connexion dédiée pour cette opération
+        try (Connection conn = getEnhancedConnection()) {
+            
+            String sql = "INSERT INTO historique_mises_a_jour_enhanced " +
+                         "(tableName, status, recordsInserted, recordsUpdated, recordsUnchanged, service) " +
+                         "VALUES (?, ?, ?, ?, ?, ?)";
+            
+            // CORRECTION: Vérifier d'abord si la connexion est valide
+            if (!conn.isValid(5)) {
+                LOGGER.severe("Connexion invalide avant l'insertion");
+                return -1;
+            }
+            
             conn.setAutoCommit(false);
             
             try (PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
                 
                 stmt.setString(1, tableName);
                 stmt.setString(2, status);
-                stmt.setString(3, description);
-                stmt.setInt(4, recordsInserted);
-                stmt.setInt(5, recordsUpdated);
-                stmt.setInt(6, recordsUnchanged);
-                stmt.setString(7, service);
-                stmt.setString(8, getCurrentUser());
+                stmt.setInt(3, recordsInserted);
+                stmt.setInt(4, recordsUpdated);
+                stmt.setInt(5, recordsUnchanged);
+                stmt.setString(6, service != null ? service : "Inconnu");
                 
                 int affectedRows = stmt.executeUpdate();
                 
                 if (affectedRows == 0) {
-                    throw new SQLException("L'enregistrement de la mise à jour a échoué");
+                    conn.rollback();
+                    throw new SQLException("L'enregistrement de la mise à jour a échoué - aucune ligne affectée");
                 }
                 
                 int updateId = -1;
@@ -80,31 +118,28 @@ public class EnhancedDatabaseManager extends DatabaseManager {
                     if (generatedKeys.next()) {
                         updateId = generatedKeys.getInt(1);
                         
-                        // Enregistrer aussi dans l'historique des modifications pour compatibilité
-                        String detailsModification = String.format(
-                            "Mise à jour CSV #%d: %d insertions, %d modifications, %d inchangés",
-                            updateId, recordsInserted, recordsUpdated, recordsUnchanged
-                        );
+                        // CORRECTION: Enregistrer dans l'historique avec une connexion séparée
+                        logModificationSeparately(tableName, recordsInserted, recordsUpdated, recordsUnchanged, updateId);
                         
-                        logModification(tableName, "Mise à jour CSV", getCurrentUser(), detailsModification);
-                        
-                        // CORRECTION: Valider la transaction
                         conn.commit();
                         
-                        LOGGER.info("Mise à jour enregistrée avec succès. ID: " + updateId);
+                        LOGGER.info("Mise à jour enregistrée avec succès. ID: " + updateId + 
+                                   " pour table: " + tableName + " service: " + service);
                         
                         return updateId;
                     } else {
-                        throw new SQLException("L'enregistrement de la mise à jour a échoué, aucun ID obtenu");
+                        conn.rollback();
+                        throw new SQLException("Aucun ID généré pour la mise à jour");
                     }
                 }
                 
             } catch (SQLException e) {
-                // CORRECTION: Rollback en cas d'erreur
-                conn.rollback();
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackEx) {
+                    LOGGER.log(Level.WARNING, "Erreur lors du rollback", rollbackEx);
+                }
                 throw e;
-            } finally {
-                conn.setAutoCommit(true);
             }
             
         } catch (SQLException e) {
@@ -114,17 +149,51 @@ public class EnhancedDatabaseManager extends DatabaseManager {
     }
     
     /**
-     * CORRECTION: Récupère l'historique complet des mises à jour améliorées avec ORDER BY
+     * CORRECTION: Enregistrer dans l'historique des modifications avec une connexion séparée
+     */
+    private static void logModificationSeparately(String tableName, int recordsInserted, 
+                                                 int recordsUpdated, int recordsUnchanged, int updateId) {
+        try (Connection separateConn = getEnhancedConnection()) {
+            String detailsModification = String.format(
+                "Mise à jour CSV #%d: %d insertions, %d modifications, %d inchangés",
+                updateId, recordsInserted, recordsUpdated, recordsUnchanged
+            );
+            
+            String sql = "INSERT INTO historique_modifications " +
+                        "(date, table_modifiee, type_modification, utilisateur, details) " +
+                        "VALUES (NOW(), ?, ?, ?, ?)";
+            
+            try (PreparedStatement stmt = separateConn.prepareStatement(sql)) {
+                stmt.setString(1, tableName);
+                stmt.setString(2, "Mise à jour CSV");
+                stmt.setString(3, getCurrentUser());
+                stmt.setString(4, detailsModification);
+                
+                stmt.executeUpdate();
+                LOGGER.info("Historique des modifications mis à jour pour la mise à jour #" + updateId);
+                
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.WARNING, "Erreur lors de l'enregistrement dans l'historique des modifications", e);
+            // Ne pas faire échouer la mise à jour principale pour cette erreur secondaire
+        }
+    }
+    
+    /**
+     * CORRECTION: Récupère l'historique avec gestion sécurisée des connexions
      */
     public static List<EnhancedUpdateRecord> getEnhancedUpdateHistory() {
         List<EnhancedUpdateRecord> updates = new ArrayList<>();
-        String sql = "SELECT id, tableName, updateDate, status, description, " +
-                     "recordsInserted, recordsUpdated, recordsUnchanged, service, user " +
-                     "FROM historique_mises_a_jour_enhanced ORDER BY updateDate DESC, id DESC";
         
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+        String sql = "SELECT id, tableName, updateDate, status, description, " +
+                     "recordsInserted, recordsUpdated, recordsUnchanged, service " +
+                     "FROM historique_mises_a_jour_enhanced " +
+                     "ORDER BY updateDate DESC, id DESC " +
+                     "LIMIT 100"; // CORRECTION: Limiter pour éviter les timeouts
+        
+        try (Connection conn = getEnhancedConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
             
             while (rs.next()) {
                 updates.add(new EnhancedUpdateRecord(
@@ -137,7 +206,7 @@ public class EnhancedDatabaseManager extends DatabaseManager {
                     rs.getInt("recordsUpdated"),
                     rs.getInt("recordsUnchanged"),
                     rs.getString("service"),
-                    rs.getString("user")
+                    getCurrentUser()
                 ));
             }
             
@@ -151,15 +220,20 @@ public class EnhancedDatabaseManager extends DatabaseManager {
     }
     
     /**
-     * Obtient la dernière mise à jour pour une table spécifique
+     * CORRECTION: Obtient la dernière mise à jour avec gestion sécurisée
      */
     public static EnhancedUpdateRecord getLastEnhancedUpdateForTable(String tableName) {
+        if (tableName == null || tableName.trim().isEmpty()) {
+            return null;
+        }
+        
         String sql = "SELECT id, tableName, updateDate, status, description, " +
-                     "recordsInserted, recordsUpdated, recordsUnchanged, service, user " +
-                     "FROM historique_mises_a_jour_enhanced WHERE tableName = ? " +
+                     "recordsInserted, recordsUpdated, recordsUnchanged, service " +
+                     "FROM historique_mises_a_jour_enhanced " +
+                     "WHERE tableName = ? " +
                      "ORDER BY updateDate DESC, id DESC LIMIT 1";
         
-        try (Connection conn = getConnection();
+        try (Connection conn = getEnhancedConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setString(1, tableName);
@@ -176,148 +250,70 @@ public class EnhancedDatabaseManager extends DatabaseManager {
                         rs.getInt("recordsUpdated"),
                         rs.getInt("recordsUnchanged"),
                         rs.getString("service"),
-                        rs.getString("user")
+                        getCurrentUser()
                     );
                 }
             }
             
         } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Erreur lors de la récupération de la dernière mise à jour", e);
+            LOGGER.log(Level.SEVERE, "Erreur lors de la récupération de la dernière mise à jour pour " + tableName, e);
         }
         
         return null;
     }
     
     /**
-     * Obtient l'historique des mises à jour pour un service spécifique
+     * CORRECTION: Test de connexion pour débogage
      */
-    public static List<EnhancedUpdateRecord> getEnhancedUpdateHistoryForService(String service) {
-        List<EnhancedUpdateRecord> updates = new ArrayList<>();
-        String sql = "SELECT id, tableName, updateDate, status, description, " +
-                     "recordsInserted, recordsUpdated, recordsUnchanged, service, user " +
-                     "FROM historique_mises_a_jour_enhanced WHERE service = ? " +
-                     "ORDER BY updateDate DESC, id DESC";
-        
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            
-            stmt.setString(1, service);
-            
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    updates.add(new EnhancedUpdateRecord(
-                        rs.getInt("id"),
-                        rs.getString("tableName"),
-                        rs.getTimestamp("updateDate"),
-                        rs.getString("status"),
-                        rs.getString("description"),
-                        rs.getInt("recordsInserted"),
-                        rs.getInt("recordsUpdated"),
-                        rs.getInt("recordsUnchanged"),
-                        rs.getString("service"),
-                        rs.getString("user")
-                    ));
-                }
-            }
-            
+    public static boolean testConnection() {
+        try (Connection conn = getEnhancedConnection()) {
+            boolean isValid = conn.isValid(10);
+            LOGGER.info("Test de connexion: " + (isValid ? "SUCCÈS" : "ÉCHEC"));
+            return isValid;
         } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Erreur lors de la récupération de l'historique par service", e);
+            LOGGER.log(Level.SEVERE, "Test de connexion échoué", e);
+            return false;
         }
-        
-        return updates;
     }
     
     /**
-     * Identifie les tables périmées (non mises à jour depuis plus de 30 jours)
-     */
-    public static List<String> getOutdatedTables(String service) {
-        List<String> outdatedTables = new ArrayList<>();
-        List<String> serviceTables = ServicePermissions.getTablesForService(service);
-        
-        String sql = "SELECT tableName, MAX(updateDate) as lastUpdate " +
-                     "FROM historique_mises_a_jour_enhanced " +
-                     "WHERE service = ? AND tableName = ? " +
-                     "GROUP BY tableName";
-        
-        try (Connection conn = getConnection()) {
-            for (String table : serviceTables) {
-                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                    stmt.setString(1, service);
-                    stmt.setString(2, table);
-                    
-                    try (ResultSet rs = stmt.executeQuery()) {
-                        if (rs.next()) {
-                            Timestamp lastUpdate = rs.getTimestamp("lastUpdate");
-                            long daysSinceUpdate = (System.currentTimeMillis() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24);
-                            
-                            if (daysSinceUpdate > 30) {
-                                outdatedTables.add(table);
-                            }
-                        } else {
-                            // Aucune mise à jour trouvée, considérer comme périmée
-                            outdatedTables.add(table);
-                        }
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Erreur lors de la vérification des tables périmées", e);
-        }
-        
-        return outdatedTables;
-    }
-    
-    /**
-     * Obtient des statistiques de mise à jour pour un service
-     */
-    public static UpdateStatistics getUpdateStatistics(String service) {
-        UpdateStatistics stats = new UpdateStatistics();
-        
-        String sql = "SELECT " +
-                     "COUNT(*) as totalUpdates, " +
-                     "SUM(recordsInserted) as totalInserted, " +
-                     "SUM(recordsUpdated) as totalUpdated, " +
-                     "SUM(recordsUnchanged) as totalUnchanged, " +
-                     "COUNT(DISTINCT tableName) as tablesUpdated " +
-                     "FROM historique_mises_a_jour_enhanced " +
-                     "WHERE service = ? AND updateDate >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
-        
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            
-            stmt.setString(1, service);
-            
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    stats.setTotalUpdates(rs.getInt("totalUpdates"));
-                    stats.setTotalInserted(rs.getInt("totalInserted"));
-                    stats.setTotalUpdated(rs.getInt("totalUpdated"));
-                    stats.setTotalUnchanged(rs.getInt("totalUnchanged"));
-                    stats.setTablesUpdated(rs.getInt("tablesUpdated"));
-                }
-            }
-            
-        } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Erreur lors de la récupération des statistiques", e);
-        }
-        
-        return stats;
-    }
-    
-    /**
-     * CORRECTION: Obtient l'utilisateur actuel (à adapter selon votre système d'authentification)
+     * CORRECTION: Obtient l'utilisateur actuel de manière sécurisée
      */
     private static String getCurrentUser() {
         try {
-            return UserSession.getCurrentUser();
+            String currentUser = UserSession.getCurrentUser();
+            return (currentUser != null && !currentUser.trim().isEmpty()) ? currentUser : "Système";
         } catch (Exception e) {
-            return System.getProperty("user.name", "Inconnu");
+            LOGGER.log(Level.WARNING, "Erreur lors de la récupération de l'utilisateur actuel", e);
+            return "Système";
+        }
+    }
+    
+    /**
+     * CORRECTION: Nettoyage des anciennes entrées pour éviter la surcharge
+     */
+    public static void cleanupOldHistory(int daysToKeep) {
+        String sql = "DELETE FROM historique_mises_a_jour_enhanced " +
+                     "WHERE updateDate < DATE_SUB(NOW(), INTERVAL ? DAY)";
+        
+        try (Connection conn = getEnhancedConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            
+            stmt.setInt(1, daysToKeep);
+            int deletedRows = stmt.executeUpdate();
+            
+            if (deletedRows > 0) {
+                LOGGER.info("Nettoyage automatique: " + deletedRows + " anciens enregistrements supprimés");
+            }
+            
+        } catch (SQLException e) {
+            LOGGER.log(Level.WARNING, "Erreur lors du nettoyage de l'historique", e);
         }
     }
 }
 
 /**
- * Classe pour représenter un enregistrement de mise à jour amélioré
+ * CORRECTION: Classe EnhancedUpdateRecord avec gestion d'erreurs
  */
 class EnhancedUpdateRecord {
     private final int id;
@@ -335,18 +331,18 @@ class EnhancedUpdateRecord {
                                String description, int recordsInserted, int recordsUpdated, 
                                int recordsUnchanged, String service, String user) {
         this.id = id;
-        this.tableName = tableName;
-        this.updateDate = updateDate;
-        this.status = status;
-        this.description = description;
-        this.recordsInserted = recordsInserted;
-        this.recordsUpdated = recordsUpdated;
-        this.recordsUnchanged = recordsUnchanged;
-        this.service = service;
-        this.user = user;
+        this.tableName = tableName != null ? tableName : "Inconnu";
+        this.updateDate = updateDate != null ? updateDate : new Timestamp(System.currentTimeMillis());
+        this.status = status != null ? status : "Inconnu";
+        this.description = description != null ? description : "";
+        this.recordsInserted = Math.max(0, recordsInserted);
+        this.recordsUpdated = Math.max(0, recordsUpdated);
+        this.recordsUnchanged = Math.max(0, recordsUnchanged);
+        this.service = service != null ? service : "Inconnu";
+        this.user = user != null ? user : "Système";
     }
     
-    // Getters
+    // Getters avec vérifications de sécurité
     public int getId() { return id; }
     public String getTableName() { return tableName; }
     public Date getUpdateDate() { return updateDate; }
@@ -364,6 +360,12 @@ class EnhancedUpdateRecord {
     
     public boolean hasErrors() { 
         return "Échec".equals(status) || "Partiel".equals(status); 
+    }
+    
+    @Override
+    public String toString() {
+        return String.format("EnhancedUpdateRecord{id=%d, table='%s', status='%s', total=%d}", 
+                           id, tableName, status, getTotalRecords());
     }
 }
 

@@ -578,6 +578,269 @@ public class MiseAJourController {
                      "Impossible d'afficher l'historique complet: " + e.getMessage());
         }
     }
+    
+    /**
+     * NOUVEAU bouton d'analyse des matricules avant mise à jour
+     */
+    @FXML
+    private void analyzerMatricules() {
+        String selectedTable = getSelectedTableName();
+        String filePath = filePathField.getText();
+        
+        if (selectedTable == null || filePath.isEmpty()) {
+            showAlert(Alert.AlertType.ERROR, "Erreur", "Sélection incomplète", 
+                      "Veuillez sélectionner une table et un fichier");
+            return;
+        }
+        
+        File csvFile = new File(filePath);
+        if (!csvFile.exists()) {
+            showAlert(Alert.AlertType.ERROR, "Erreur", "Fichier introuvable", 
+                      "Le fichier sélectionné n'existe pas");
+            return;
+        }
+        
+        try {
+            // Analyser les matricules
+            CSVProcessor.AnalysisResult analysis = CSVProcessor.analyzeCSVMatricules(csvFile, selectedTable);
+            
+            // Afficher le rapport d'analyse
+            showAnalysisDialog(analysis);
+            
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de l'analyse des matricules", e);
+            showAlert(Alert.AlertType.ERROR, "Erreur", "Erreur d'analyse", 
+                      "Impossible d'analyser les matricules: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Affiche les résultats de l'analyse des matricules
+     */
+    private void showAnalysisDialog(CSVProcessor.AnalysisResult analysis) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Analyse des matricules");
+        alert.setHeaderText("Résultats de l'analyse de compatibilité");
+        
+        VBox content = new VBox(15);
+        content.setPadding(new Insets(20));
+        
+        // Statistiques générales
+        GridPane statsGrid = new GridPane();
+        statsGrid.setHgap(15);
+        statsGrid.setVgap(8);
+        
+        statsGrid.add(new Label("Matricules dans le CSV:"), 0, 0);
+        statsGrid.add(new Label(String.valueOf(analysis.getCsvMatricules().size())), 1, 0);
+        
+        statsGrid.add(new Label("Matricules valides en DB:"), 0, 1);
+        statsGrid.add(new Label(String.valueOf(analysis.getValidMatricules().size())), 1, 1);
+        
+        statsGrid.add(new Label("Matricules manquants:"), 0, 2);
+        Label missingCountLabel = new Label(String.valueOf(analysis.getMissingMatricules().size()));
+        if (analysis.getMissingMatricules().size() > 0) {
+            missingCountLabel.setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
+        } else {
+            missingCountLabel.setStyle("-fx-text-fill: green; -fx-font-weight: bold;");
+        }
+        statsGrid.add(missingCountLabel, 1, 2);
+        
+        content.getChildren().add(statsGrid);
+        
+        // Si il y a des matricules manquants, les afficher
+        if (!analysis.getMissingMatricules().isEmpty()) {
+            content.getChildren().add(new Separator());
+            
+            Label warningLabel = new Label("⚠️ Matricules manquants dans identite_personnelle :");
+            warningLabel.setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
+            content.getChildren().add(warningLabel);
+            
+            TextArea missingArea = new TextArea();
+            missingArea.setEditable(false);
+            missingArea.setPrefRowCount(8);
+            missingArea.setWrapText(true);
+            
+            StringBuilder missingText = new StringBuilder();
+            int count = 0;
+            for (String matricule : analysis.getMissingMatricules()) {
+                if (count > 0) missingText.append(", ");
+                missingText.append(matricule);
+                count++;
+                if (count >= 50) { // Limiter l'affichage
+                    missingText.append("\n... et ").append(analysis.getMissingMatricules().size() - 50).append(" autres");
+                    break;
+                }
+            }
+            missingArea.setText(missingText.toString());
+            content.getChildren().add(missingArea);
+            
+            // Options d'action
+            content.getChildren().add(new Separator());
+            Label actionsLabel = new Label("Actions possibles:");
+            actionsLabel.setStyle("-fx-font-weight: bold;");
+            content.getChildren().add(actionsLabel);
+            
+            VBox actionsBox = new VBox(5);
+            actionsBox.getChildren().addAll(
+                new Label("1. Nettoyer le fichier CSV pour supprimer les matricules inexistants"),
+                new Label("2. Ajouter d'abord les matricules manquants dans identite_personnelle"),
+                new Label("3. Utiliser l'option 'Ignorer matricules invalides' lors de la mise à jour")
+            );
+            content.getChildren().add(actionsBox);
+        } else {
+            Label successLabel = new Label("✅ Tous les matricules du CSV existent dans identite_personnelle");
+            successLabel.setStyle("-fx-text-fill: green; -fx-font-weight: bold;");
+            content.getChildren().add(successLabel);
+        }
+        
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefHeight(500);
+        
+        alert.getDialogPane().setContent(scrollPane);
+        alert.getDialogPane().setPrefWidth(600);
+        
+        alert.showAndWait();
+    }
+    
+    /**
+     * MODIFICATION de la méthode startUpdate pour utiliser la nouvelle validation
+     */
+    @FXML
+    private void startUpdateWithFK() {
+        if (lastValidation == null || !lastValidation.isValid()) {
+            showAlert(Alert.AlertType.ERROR, "Erreur", "Validation requise", 
+                      "Veuillez d'abord valider le schéma du fichier");
+            return;
+        }
+        
+        String selectedTable = getSelectedTableName();
+        String filePath = filePathField.getText();
+        File csvFile = new File(filePath);
+        
+        // NOUVEAU : Demander confirmation pour les tables avec clés étrangères
+        if (hasMatriculeForeignKey(selectedTable)) {
+            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+            confirmAlert.setTitle("Confirmation - Table avec clés étrangères");
+            confirmAlert.setHeaderText("Cette table contient des contraintes de clés étrangères");
+            confirmAlert.setContentText(
+                "La table '" + selectedTable + "' a des contraintes sur les matricules.\n\n" +
+                "Options disponibles:\n" +
+                "• Continuer : Les matricules invalides seront ignorés\n" +
+                "• Analyser d'abord : Voir quels matricules posent problème\n" +
+                "• Annuler : Arrêter la mise à jour\n\n" +
+                "Voulez-vous continuer la mise à jour ?"
+            );
+            
+            ButtonType analyzeButton = new ButtonType("Analyser d'abord");
+            ButtonType continueButton = new ButtonType("Continuer");
+            ButtonType cancelButton = new ButtonType("Annuler", ButtonBar.ButtonData.CANCEL_CLOSE);
+            
+            confirmAlert.getButtonTypes().setAll(analyzeButton, continueButton, cancelButton);
+            
+            Optional<ButtonType> result = confirmAlert.showAndWait();
+            
+            if (result.isPresent()) {
+                if (result.get() == analyzeButton) {
+                    analyzerMatricules();
+                    return;
+                } else if (result.get() == cancelButton) {
+                    return;
+                }
+                // Si "Continuer" est sélectionné, on continue avec la mise à jour
+            } else {
+                return; // Dialog fermé
+            }
+        }
+        
+        // Préparer l'interface
+        updateProgress.setVisible(true);
+        updateProgress.setProgress(0);
+        statusLabel.setText("Mise à jour en cours avec validation des clés étrangères...");
+        setControlsDisabled(true);
+        
+        // Démarrer la mise à jour dans un thread séparé
+        Thread updateThread = new Thread(() -> {
+            try {
+                // NOUVEAU : Utiliser la version avec validation des clés étrangères
+                CSVProcessor.EnhancedUpdateResult result = 
+                    CSVProcessor.processEnhancedCSVUpdateSecure(csvFile, selectedTable, 
+                        progress -> Platform.runLater(() -> updateProgress.setProgress(progress)));
+                
+                // Enregistrer le résultat
+                String status = result.hasErrors() ? "Partiel" : "Succès";
+                String description = createUpdateDescription(result);
+                
+                int updateId = EnhancedDatabaseManager.logEnhancedUpdate(
+                    selectedTable,
+                    status,
+                    result.getRecordsInserted(),
+                    result.getRecordsUpdated(),
+                    result.getRecordsUnchanged(),
+                    currentService
+                );
+                
+                // Mettre à jour l'interface
+                Platform.runLater(() -> {
+                    updateProgress.setVisible(false);
+                    
+                    if (result.hasErrors() || result.hasWarnings()) {
+                        showUpdateResultDialog(result);
+                        statusLabel.setText("Mise à jour terminée avec des avertissements");
+                    } else if (!result.hasChanges()) {
+                        showAlert(Alert.AlertType.INFORMATION, "Aucune modification", 
+                                  "Mise à jour terminée", 
+                                  "Aucune modification détectée. Tous les enregistrements sont identiques.");
+                        statusLabel.setText("Aucune modification nécessaire");
+                    } else {
+                        showAlert(Alert.AlertType.INFORMATION, "Succès", "Mise à jour terminée", 
+                                  String.format("✅ Mise à jour effectuée avec succès!\n\n📊 Résumé:\n%d nouveaux enregistrements\n%d enregistrements modifiés\n%d enregistrements inchangés\n\nTotal traité: %d", 
+                                  result.getRecordsInserted(), result.getRecordsUpdated(), result.getRecordsUnchanged(), result.getTotalRecords()));
+                        statusLabel.setText("Mise à jour terminée avec succès!");
+                    }
+                    
+                    loadUpdateHistory();
+                    updateTableInfo();
+                    setControlsDisabled(false);
+                    TableSchemaManager.clearCache();
+                });
+                
+            } catch (Exception e) {
+                Platform.runLater(() -> {
+                    showAlert(Alert.AlertType.ERROR, "Erreur", "Échec de la mise à jour", 
+                              "La mise à jour a échoué:\n\n" + e.getMessage() + 
+                              "\n\nVérifiez le format de votre fichier CSV et les matricules, puis réessayez.");
+                    updateProgress.setVisible(false);
+                    statusLabel.setText("Échec de la mise à jour");
+                    setControlsDisabled(false);
+                    
+                    EnhancedDatabaseManager.logEnhancedUpdate(
+                        selectedTable,
+                        "Échec",
+                        0, 0, 0,
+                        currentService
+                    );
+                    
+                    loadUpdateHistory();
+                });
+            }
+        });
+        
+        updateThread.setDaemon(true);
+        updateThread.start();
+    }
+    
+    /**
+     * Vérifie si une table a des contraintes de clé étrangère sur matricule
+     */
+    private boolean hasMatriculeForeignKey(String tableName) {
+        return Arrays.asList("grade_actuel", "formation_actuelle", "specialite", 
+                            "parametres_corporels", "dotation_particuliere_config",
+                            "infos_specifiques_general", "personnel_naviguant")
+                     .contains(tableName.toLowerCase());
+    }
+    
+    
 
     /**
      * Amélioration de la méthode de mise à jour pour utiliser REPLACE INTO
@@ -597,7 +860,7 @@ public class MiseAJourController {
                 
                 // Puis insérer les nouvelles données
                 CSVProcessor.EnhancedUpdateResult result = 
-                    CSVProcessor.processEnhancedCSVUpdate(csvFile, tableName, 
+                    CSVProcessor.processEnhancedCSVUpdateSecure(csvFile, tableName, 
                         progress -> Platform.runLater(() -> updateProgress.setProgress(progress)));
                 
                 conn.commit();
@@ -709,7 +972,7 @@ public class MiseAJourController {
         Thread updateThread = new Thread(() -> {
             try {
                 CSVProcessor.EnhancedUpdateResult result = 
-                    CSVProcessor.processEnhancedCSVUpdate(csvFile, selectedTable, 
+                    CSVProcessor.processEnhancedCSVUpdateSecure(csvFile, selectedTable, 
                         progress -> Platform.runLater(() -> updateProgress.setProgress(progress)));
                 
                 // Enregistrer le résultat
@@ -719,7 +982,6 @@ public class MiseAJourController {
                 int updateId = EnhancedDatabaseManager.logEnhancedUpdate(
                     selectedTable,
                     status,
-                    description,
                     result.getRecordsInserted(),
                     result.getRecordsUpdated(),
                     result.getRecordsUnchanged(),
@@ -767,7 +1029,6 @@ public class MiseAJourController {
                     EnhancedDatabaseManager.logEnhancedUpdate(
                         selectedTable,
                         "Échec",
-                        "Erreur: " + e.getMessage(),
                         0, 0, 0,
                         currentService
                     );
