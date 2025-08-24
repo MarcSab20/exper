@@ -15,6 +15,11 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.stage.Modality;
 import javafx.scene.Scene;
+import javafx.geometry.Insets;
+import javafx.scene.layout.GridPane;
+import javafx.scene.control.Separator;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.layout.VBox;
 
 import java.io.*;
 import java.sql.*;
@@ -601,17 +606,144 @@ public class MiseAJourController {
         }
         
         try {
-            // Analyser les matricules
+            // Analyser les matricules avec la nouvelle méthode
             CSVProcessor.AnalysisResult analysis = CSVProcessor.analyzeCSVMatricules(csvFile, selectedTable);
             
-            // Afficher le rapport d'analyse
-            showAnalysisDialog(analysis);
+            // Afficher le rapport d'analyse amélioré
+            showEnhancedAnalysisDialog(analysis, selectedTable);
             
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Erreur lors de l'analyse des matricules", e);
             showAlert(Alert.AlertType.ERROR, "Erreur", "Erreur d'analyse", 
                       "Impossible d'analyser les matricules: " + e.getMessage());
         }
+    }
+    
+    /**
+     * NOUVELLE MÉTHODE : Dialogue d'analyse amélioré
+     */
+    private void showEnhancedAnalysisDialog(CSVProcessor.AnalysisResult analysis, String tableName) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Analyse des matricules - " + tableName);
+        alert.setHeaderText("Rapport de compatibilité des matricules");
+        
+        VBox content = new VBox(15);
+        content.setPadding(new Insets(20));
+        
+        // Statistiques générales avec icônes
+        GridPane statsGrid = new GridPane();
+        statsGrid.setHgap(15);
+        statsGrid.setVgap(8);
+        
+        statsGrid.add(new Label("📄 Matricules dans le CSV:"), 0, 0);
+        statsGrid.add(new Label(String.valueOf(analysis.getCsvMatricules().size())), 1, 0);
+        
+        statsGrid.add(new Label("✅ Matricules valides en DB:"), 0, 1);
+        statsGrid.add(new Label(String.valueOf(analysis.getValidMatricules().size())), 1, 1);
+        
+        statsGrid.add(new Label("❌ Matricules manquants:"), 0, 2);
+        Label missingCountLabel = new Label(String.valueOf(analysis.getMissingMatricules().size()));
+        if (analysis.getMissingMatricules().size() > 0) {
+            missingCountLabel.setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
+        } else {
+            missingCountLabel.setStyle("-fx-text-fill: green; -fx-font-weight: bold;");
+        }
+        statsGrid.add(missingCountLabel, 1, 2);
+        
+        // Calculer le pourcentage de validité
+        double validPercentage = analysis.getCsvMatricules().size() > 0 ? 
+            ((double)(analysis.getCsvMatricules().size() - analysis.getMissingMatricules().size()) / 
+             analysis.getCsvMatricules().size()) * 100.0 : 0.0;
+        
+        statsGrid.add(new Label("📊 Taux de validité:"), 0, 3);
+        Label percentageLabel = new Label(String.format("%.1f%%", validPercentage));
+        if (validPercentage >= 90) {
+            percentageLabel.setStyle("-fx-text-fill: green; -fx-font-weight: bold;");
+        } else if (validPercentage >= 70) {
+            percentageLabel.setStyle("-fx-text-fill: orange; -fx-font-weight: bold;");
+        } else {
+            percentageLabel.setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
+        }
+        statsGrid.add(percentageLabel, 1, 3);
+        
+        content.getChildren().add(statsGrid);
+        
+        // Affichage conditionnel selon les résultats
+        if (analysis.getMissingMatricules().isEmpty()) {
+            content.getChildren().add(new Separator());
+            
+            Label successLabel = new Label("🎉 Excellente nouvelle ! Tous les matricules du CSV existent dans identite_personnelle");
+            successLabel.setStyle("-fx-text-fill: green; -fx-font-weight: bold; -fx-wrap-text: true;");
+            content.getChildren().add(successLabel);
+            
+            Label recommendationLabel = new Label("➡️ Vous pouvez procéder à la mise à jour sans problème.");
+            recommendationLabel.setStyle("-fx-text-fill: green; -fx-wrap-text: true;");
+            content.getChildren().add(recommendationLabel);
+            
+        } else {
+            content.getChildren().add(new Separator());
+            
+            Label warningLabel = new Label("⚠️ Matricules manquants détectés :");
+            warningLabel.setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
+            content.getChildren().add(warningLabel);
+            
+            TextArea missingArea = new TextArea();
+            missingArea.setEditable(false);
+            missingArea.setPrefRowCount(8);
+            missingArea.setWrapText(true);
+            
+            StringBuilder missingText = new StringBuilder();
+            missingText.append("Les matricules suivants ne sont pas trouvés dans identite_personnelle:\n\n");
+            
+            int count = 0;
+            for (String matricule : analysis.getMissingMatricules()) {
+                if (count > 0 && count % 10 == 0) missingText.append("\n");
+                missingText.append(matricule).append("  ");
+                count++;
+                if (count >= 100) {
+                    missingText.append("\n\n... et ").append(analysis.getMissingMatricules().size() - 100).append(" autres");
+                    break;
+                }
+            }
+            missingArea.setText(missingText.toString());
+            content.getChildren().add(missingArea);
+            
+            // Recommandations
+            content.getChildren().add(new Separator());
+            Label actionsLabel = new Label("💡 Options disponibles :");
+            actionsLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #0066cc;");
+            content.getChildren().add(actionsLabel);
+            
+            VBox actionsBox = new VBox(5);
+            actionsBox.getChildren().addAll(
+                new Label("✅ RECOMMANDÉ: Utiliser la validation automatique (les matricules invalides seront ignorés)"),
+                new Label("🔧 ALTERNATIF: Corriger le fichier CSV pour supprimer les matricules inexistants"),
+                new Label("➕ AVANCÉ: Ajouter d'abord les matricules manquants dans identite_personnelle")
+            );
+            
+            // Styliser les options
+            for (int i = 0; i < actionsBox.getChildren().size(); i++) {
+                Label optionLabel = (Label) actionsBox.getChildren().get(i);
+                optionLabel.setWrapText(true);
+                optionLabel.setPrefWidth(500);
+                if (i == 0) {
+                    optionLabel.setStyle("-fx-text-fill: green;");
+                } else {
+                    optionLabel.setStyle("-fx-text-fill: #666666;");
+                }
+            }
+            
+            content.getChildren().add(actionsBox);
+        }
+        
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefHeight(Math.min(600, content.getPrefHeight() + 50));
+        
+        alert.getDialogPane().setContent(scrollPane);
+        alert.getDialogPane().setPrefWidth(650);
+        
+        alert.showAndWait();
     }
     
     /**
@@ -764,7 +896,7 @@ public class MiseAJourController {
             try {
                 // NOUVEAU : Utiliser la version avec validation des clés étrangères
                 CSVProcessor.EnhancedUpdateResult result = 
-                    CSVProcessor.processEnhancedCSVUpdateSecure(csvFile, selectedTable, 
+                    CSVProcessor.processEnhancedCSVUpdateSecureWithValidation(csvFile, selectedTable, 
                         progress -> Platform.runLater(() -> updateProgress.setProgress(progress)));
                 
                 // Enregistrer le résultat
@@ -860,7 +992,7 @@ public class MiseAJourController {
                 
                 // Puis insérer les nouvelles données
                 CSVProcessor.EnhancedUpdateResult result = 
-                    CSVProcessor.processEnhancedCSVUpdateSecure(csvFile, tableName, 
+                    CSVProcessor.processEnhancedCSVUpdateSecureWithValidation(csvFile, tableName, 
                         progress -> Platform.runLater(() -> updateProgress.setProgress(progress)));
                 
                 conn.commit();
@@ -927,6 +1059,118 @@ public class MiseAJourController {
             LOGGER.log(Level.SEVERE, "Erreur lors du debug des tables", e);
         }
     }
+    
+    /**
+     * NOUVELLE MÉTHODE : Affichage amélioré des résultats avec gestion des clés étrangères
+     */
+    private void showEnhancedUpdateResultDialog(CSVProcessor.EnhancedUpdateResult result, boolean hadForeignKeys) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        
+        if (result.hasErrors()) {
+            alert.setAlertType(Alert.AlertType.WARNING);
+            alert.setTitle("Mise à jour terminée avec des avertissements");
+            alert.setHeaderText("La mise à jour s'est terminée avec quelques problèmes");
+        } else {
+            alert.setTitle("Mise à jour terminée avec succès");
+            alert.setHeaderText("La mise à jour s'est déroulée sans erreur");
+        }
+        
+        // Créer un contenu personnalisé
+        VBox content = new VBox(15);
+        content.setPadding(new Insets(20));
+        
+        // Résumé des statistiques
+        GridPane statsGrid = new GridPane();
+        statsGrid.setHgap(15);
+        statsGrid.setVgap(8);
+        
+        statsGrid.add(new Label("Nouveaux enregistrements:"), 0, 0);
+        Label insertedLabel = new Label(String.valueOf(result.getRecordsInserted()));
+        insertedLabel.setStyle("-fx-text-fill: green; -fx-font-weight: bold;");
+        statsGrid.add(insertedLabel, 1, 0);
+        
+        statsGrid.add(new Label("Enregistrements modifiés:"), 0, 1);
+        Label updatedLabel = new Label(String.valueOf(result.getRecordsUpdated()));
+        updatedLabel.setStyle("-fx-text-fill: blue; -fx-font-weight: bold;");
+        statsGrid.add(updatedLabel, 1, 1);
+        
+        statsGrid.add(new Label("Enregistrements inchangés:"), 0, 2);
+        statsGrid.add(new Label(String.valueOf(result.getRecordsUnchanged())), 1, 2);
+        
+        statsGrid.add(new Label("Total traité:"), 0, 3);
+        Label totalLabel = new Label(String.valueOf(result.getTotalRecords()));
+        totalLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
+        statsGrid.add(totalLabel, 1, 3);
+        
+        content.getChildren().add(statsGrid);
+        
+        // Section des avertissements si il y en a
+        if (result.hasWarnings()) {
+            content.getChildren().add(new Separator());
+            
+            if (hadForeignKeys) {
+                Label warningTitle = new Label("🔍 Validation des matricules :");
+                warningTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: #ff8c00;");
+                content.getChildren().add(warningTitle);
+            } else {
+                Label warningTitle = new Label("⚠️ Avertissements :");
+                warningTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: #ff8c00;");
+                content.getChildren().add(warningTitle);
+            }
+            
+            TextArea warningsArea = new TextArea();
+            warningsArea.setEditable(false);
+            warningsArea.setWrapText(true);
+            warningsArea.setPrefRowCount(8);
+            warningsArea.setMaxHeight(200);
+            
+            StringBuilder warningsText = new StringBuilder();
+            for (String warning : result.getWarnings()) {
+                warningsText.append("• ").append(warning).append("\n");
+            }
+            warningsArea.setText(warningsText.toString());
+            content.getChildren().add(warningsArea);
+        }
+        
+        // Section des erreurs si il y en a
+        if (result.hasErrors()) {
+            content.getChildren().add(new Separator());
+            
+            Label errorTitle = new Label("❌ Erreurs :");
+            errorTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: red;");
+            content.getChildren().add(errorTitle);
+            
+            TextArea errorsArea = new TextArea();
+            errorsArea.setEditable(false);
+            errorsArea.setWrapText(true);
+            errorsArea.setPrefRowCount(6);
+            errorsArea.setMaxHeight(150);
+            
+            StringBuilder errorsText = new StringBuilder();
+            for (String error : result.getErrors()) {
+                errorsText.append("• ").append(error).append("\n");
+            }
+            errorsArea.setText(errorsText.toString());
+            content.getChildren().add(errorsArea);
+        }
+        
+        // Message de conclusion
+        if (hadForeignKeys && result.hasWarnings() && !result.hasErrors()) {
+            Label conclusionLabel = new Label("✅ Les matricules invalides ont été ignorés automatiquement. Aucune erreur générée.");
+            conclusionLabel.setStyle("-fx-text-fill: green; -fx-font-weight: bold; -fx-wrap-text: true;");
+            content.getChildren().add(conclusionLabel);
+        }
+        
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefHeight(Math.min(600, content.getPrefHeight() + 50));
+        
+        alert.getDialogPane().setContent(scrollPane);
+        alert.getDialogPane().setPrefWidth(650);
+        
+        alert.showAndWait();
+    }
+
 
     /**
      * Méthode pour tester une requête simple avant une requête complexe
@@ -948,100 +1192,97 @@ public class MiseAJourController {
     
     @FXML
     private void startUpdate() {
-        if (lastValidation == null || !lastValidation.isValid()) {
-            showAlert(Alert.AlertType.ERROR, "Erreur", "Validation requise", 
-                      "Veuillez d'abord valider le schéma du fichier");
-            return;
-        }
-        
-        String selectedTable = getSelectedTableName();
-        String filePath = filePathField.getText();
-        File csvFile = new File(filePath);
-        
-        if (!confirmUpdate(selectedTable, csvFile.getName())) {
-            return;
-        }
-        
-        // Préparer l'interface
-        updateProgress.setVisible(true);
-        updateProgress.setProgress(0);
-        statusLabel.setText("Mise à jour en cours...");
-        setControlsDisabled(true);
-        
-        // Démarrer la mise à jour dans un thread séparé
-        Thread updateThread = new Thread(() -> {
-            try {
-                CSVProcessor.EnhancedUpdateResult result = 
-                    CSVProcessor.processEnhancedCSVUpdateSecure(csvFile, selectedTable, 
-                        progress -> Platform.runLater(() -> updateProgress.setProgress(progress)));
+    if (lastValidation == null || !lastValidation.isValid()) {
+        showAlert(Alert.AlertType.ERROR, "Erreur", "Validation requise", 
+                  "Veuillez d'abord valider le schéma du fichier");
+        return;
+    }
+    
+    String selectedTable = getSelectedTableName();
+    String filePath = filePathField.getText();
+    File csvFile = new File(filePath);
+    
+    if (!confirmUpdate(selectedTable, csvFile.getName())) {
+        return;
+    }
+    
+    // Préparer l'interface
+    updateProgress.setVisible(true);
+    updateProgress.setProgress(0);
+    statusLabel.setText("Mise à jour en cours...");
+    setControlsDisabled(true);
+    
+    // Démarrer la mise à jour dans un thread séparé
+    Thread updateThread = new Thread(() -> {
+        try {
+            // UTILISER SEULEMENT LA MÉTHODE DE BASE - SANS WithValidation
+            CSVProcessor.EnhancedUpdateResult result = 
+                CSVProcessor.processEnhancedCSVUpdateSecureWithValidation(csvFile, selectedTable, 
+                    progress -> Platform.runLater(() -> updateProgress.setProgress(progress)));
+            
+            // Enregistrer le résultat
+            String status = result.hasErrors() ? "Partiel" : "Succès";
+            String description = createUpdateDescription(result);
+            
+            int updateId = EnhancedDatabaseManager.logEnhancedUpdate(
+                selectedTable,
+                status,
+                result.getRecordsInserted(),
+                result.getRecordsUpdated(),
+                result.getRecordsUnchanged(),
+                currentService
+            );
+            
+            // Mettre à jour l'interface
+            Platform.runLater(() -> {
+                updateProgress.setVisible(false);
                 
-                // Enregistrer le résultat
-                String status = result.hasErrors() ? "Partiel" : "Succès";
-                String description = createUpdateDescription(result);
+                if (result.hasErrors() || result.hasWarnings()) {
+                    showUpdateResultDialog(result);
+                    statusLabel.setText("Mise à jour terminée avec des avertissements");
+                } else if (!result.hasChanges()) {
+                    showAlert(Alert.AlertType.INFORMATION, "Aucune modification", 
+                              "Mise à jour terminée", 
+                              "Aucune modification détectée. Tous les enregistrements sont identiques.");
+                    statusLabel.setText("Aucune modification nécessaire");
+                } else {
+                    showAlert(Alert.AlertType.INFORMATION, "Succès", "Mise à jour terminée", 
+                              String.format("✅ Mise à jour effectuée avec succès!\n\n📊 Résumé:\n%d nouveaux enregistrements\n%d enregistrements modifiés\n%d enregistrements inchangés\n\nTotal traité: %d", 
+                              result.getRecordsInserted(), result.getRecordsUpdated(), result.getRecordsUnchanged(), result.getTotalRecords()));
+                    statusLabel.setText("Mise à jour terminée avec succès!");
+                }
                 
-                int updateId = EnhancedDatabaseManager.logEnhancedUpdate(
+                loadUpdateHistory();
+                updateTableInfo();
+                setControlsDisabled(false);
+                TableSchemaManager.clearCache();
+            });
+            
+        } catch (Exception e) {
+            Platform.runLater(() -> {
+                showAlert(Alert.AlertType.ERROR, "Erreur", "Échec de la mise à jour", 
+                          "La mise à jour a échoué:\n\n" + e.getMessage() + 
+                          "\n\nVérifiez le format de votre fichier CSV et réessayez.");
+                updateProgress.setVisible(false);
+                statusLabel.setText("Échec de la mise à jour");
+                setControlsDisabled(false);
+                
+                EnhancedDatabaseManager.logEnhancedUpdate(
                     selectedTable,
-                    status,
-                    result.getRecordsInserted(),
-                    result.getRecordsUpdated(),
-                    result.getRecordsUnchanged(),
+                    "Échec",
+                    0, 0, 0,
                     currentService
                 );
                 
-                // Mettre à jour l'interface
-                Platform.runLater(() -> {
-                    updateProgress.setVisible(false);
-                    
-                    if (result.hasErrors() || result.hasWarnings()) {
-                        showUpdateResultDialog(result);
-                        statusLabel.setText("Mise à jour terminée avec des avertissements");
-                    } else if (!result.hasChanges()) {
-                        showAlert(Alert.AlertType.INFORMATION, "Aucune modification", 
-                                  "Mise à jour terminée", 
-                                  "Aucune modification détectée. Tous les enregistrements sont identiques.");
-                        statusLabel.setText("Aucune modification nécessaire");
-                    } else {
-                        showAlert(Alert.AlertType.INFORMATION, "Succès", "Mise à jour terminée", 
-                                  String.format("✅ Mise à jour effectuée avec succès!\n\n📊 Résumé:\n%d nouveaux enregistrements\n%d enregistrements modifiés\n%d enregistrements inchangés\n\nTotal traité: %d", 
-                                  result.getRecordsInserted(), result.getRecordsUpdated(), result.getRecordsUnchanged(), result.getTotalRecords()));
-                        statusLabel.setText("Mise à jour terminée avec succès!");
-                    }
-                    
-                    // CORRECTION : Forcer le rechargement de l'historique
-                    loadUpdateHistory();
-                    updateTableInfo();
-                    setControlsDisabled(false);
-                    
-                    // Effacer le cache pour forcer la relecture du schéma
-                    TableSchemaManager.clearCache();
-                });
-                
-            } catch (Exception e) {
-                Platform.runLater(() -> {
-                    showAlert(Alert.AlertType.ERROR, "Erreur", "Échec de la mise à jour", 
-                              "La mise à jour a échoué:\n\n" + e.getMessage() + 
-                              "\n\nVérifiez le format de votre fichier CSV et réessayez.");
-                    updateProgress.setVisible(false);
-                    statusLabel.setText("Échec de la mise à jour");
-                    setControlsDisabled(false);
-                    
-                    // Enregistrer l'échec
-                    EnhancedDatabaseManager.logEnhancedUpdate(
-                        selectedTable,
-                        "Échec",
-                        0, 0, 0,
-                        currentService
-                    );
-                    
-                    // CORRECTION : Recharger l'historique même en cas d'échec
-                    loadUpdateHistory();
-                });
-            }
-        });
-        
-        updateThread.setDaemon(true);
-        updateThread.start();
-    }
+                loadUpdateHistory();
+            });
+        }
+    });
+    
+    updateThread.setDaemon(true);
+    updateThread.start();
+}
+
     
     @FXML
     private void loadUpdateHistory() {

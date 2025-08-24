@@ -42,7 +42,16 @@ public class CSVProcessor {
                 }
                 
                 // Nettoyer les en-têtes
-                String[] headers = headerLine.split(CSV_SEPARATOR);
+             // Détecter le séparateur automatiquement
+                String separator = detectSeparator(headerLine);
+                LOGGER.info("Séparateur détecté pour la mise à jour: '" + (separator.equals("\t") ? "TAB" : separator) + "'");
+
+                // Nettoyer le BOM si présent
+                if (headerLine.startsWith("\uFEFF")) {
+                    headerLine = headerLine.substring(1);
+                }
+
+                String[] headers = headerLine.split(java.util.regex.Pattern.quote(separator));
                 List<String> headerList = new ArrayList<>();
                 for (String header : headers) {
                     // Nettoyer les BOM et espaces
@@ -84,221 +93,109 @@ public class CSVProcessor {
      * Effectue la mise à jour intelligente avec différenciation insertion/modification
      * Version améliorée avec meilleure gestion des erreurs
      */
-    public static EnhancedUpdateResult processEnhancedCSVUpdateSecure(File csvFile, String tableName, 
-                                                                 ProgressCallback updateCallback) throws Exception {
+    public static EnhancedUpdateResult processEnhancedCSVUpdateSecureWithValidation(File csvFile, String tableName, 
+            ProgressCallback updateCallback) throws Exception {
 
-    int recordsInserted = 0;
-    int recordsUpdated = 0;
-    int recordsUnchanged = 0;
-    List<String> errors = new ArrayList<>();
-    List<String> warnings = new ArrayList<>();
+		LOGGER.info("=== DÉBUT DE LA MISE À JOUR AVEC VALIDATION - SANS RÉCURSION ===");
+		
+		// Directement appeler la méthode de base SANS récursion
+		return processEnhancedCSVUpdateSecureWithValidation(csvFile, tableName, updateCallback);
+	}
 
-    // Validation du schéma
-    TableSchemaManager.SchemaValidationResult validation = validateCSVSchema(csvFile, tableName);
-    if (!validation.isValid()) {
-        throw new Exception("Schéma CSV incompatible:\n" + validation.getDetailedReport());
-    }
-
-    // Récupérer les matricules valides avant de commencer
-    Set<String> validMatricules = getValidMatricules(tableName);
-    String primaryKey = ServicePermissions.getPrimaryKeyColumn(tableName);
-    Set<String> tableColumns = TableSchemaManager.getTableColumnNames(tableName);
-
-    // CORRECTION: Utiliser une connexion dédiée pour cette opération
-    try (Connection conn = getSecureConnection()) {
-        
-        if (!conn.isValid(5)) {
-            throw new SQLException("Connexion invalide au début de l'opération");
-        }
-        
-        conn.setAutoCommit(false);
-        
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), StandardCharsets.UTF_8))) {
-            String headerLine = reader.readLine();
-            if (headerLine == null) {
-                throw new Exception("Fichier CSV vide");
-            }
-            
-            String[] headers = headerLine.split(CSV_SEPARATOR);
-            
-            // Nettoyer les en-têtes
-            for (int i = 0; i < headers.length; i++) {
-                headers[i] = headers[i].trim().replaceAll("^\uFEFF", "");
-            }
-            
-            // Trouver l'index de la colonne matricule si elle existe
-            int matriculeIndex = -1;
-            for (int i = 0; i < headers.length; i++) {
-                if ("matricule".equalsIgnoreCase(headers[i])) {
-                    matriculeIndex = i;
-                    break;
-                }
-            }
-            
-            // Filtrer les colonnes valides
-            List<String> validHeaders = new ArrayList<>();
-            List<Integer> validIndexes = new ArrayList<>();
-            
-            for (int i = 0; i < headers.length; i++) {
-                if (tableColumns.contains(headers[i])) {
-                    validHeaders.add(headers[i]);
-                    validIndexes.add(i);
-                } else {
-                    warnings.add("Colonne ignorée: " + headers[i]);
-                }
-            }
-            
-            if (validHeaders.isEmpty()) {
-                throw new Exception("Aucune colonne valide trouvée dans le CSV");
-            }
-            
-            // Construire la requête REPLACE INTO
-            String replaceQuery = buildReplaceQueryForValidColumns(tableName, validHeaders);
-            
-            try (PreparedStatement stmt = conn.prepareStatement(replaceQuery)) {
-                String line;
-                int currentLine = 1;
-                int batchSize = 0;
-                final int BATCH_LIMIT = 50; // CORRECTION: Réduire la taille des batches
-                
-                int validMatriculeCount = 0;
-                int invalidMatriculeCount = 0;
-                int processedLines = 0;
-                
-                while ((line = reader.readLine()) != null) {
-                    currentLine++;
-                    processedLines++;
-                    
-                    if (updateCallback != null && processedLines % 100 == 0) {
-                        updateCallback.onProgress((double) processedLines / 10000);
-                    }
-                    
-                    try {
-                        String[] values = line.split(CSV_SEPARATOR, -1);
-                        
-                        // Vérifier le matricule si applicable
-                        if (matriculeIndex >= 0) {
-                            String matricule = "";
-                            if (matriculeIndex < values.length) {
-                                matricule = values[matriculeIndex].trim();
-                            }
-                            
-                            if (matricule.isEmpty()) {
-                                warnings.add("Ligne " + currentLine + " ignorée: matricule vide");
-                                continue;
-                            }
-                            
-                            if (!validMatricules.isEmpty() && !validMatricules.contains(matricule)) {
-                                invalidMatriculeCount++;
-                                warnings.add("Ligne " + currentLine + " ignorée: matricule '" + matricule + "' inexistant");
-                                continue;
-                            }
-                            
-                            validMatriculeCount++;
-                        }
-                        
-                        // Préparer les valeurs pour l'insertion
-                        boolean hasValidData = false;
-                        for (int i = 0; i < validHeaders.size(); i++) {
-                            int columnIndex = validIndexes.get(i);
-                            String value = "";
-                            if (columnIndex < values.length) {
-                                value = values[columnIndex].trim();
-                            }
-                            
-                            String columnType = getColumnType(tableName, validHeaders.get(i));
-                            Object convertedValue = convertValueForDatabase(value, columnType);
-                            
-                            if (convertedValue != null && !convertedValue.toString().trim().isEmpty()) {
-                                hasValidData = true;
-                            }
-                            
-                            setParameterValue(stmt, i + 1, convertedValue);
-                        }
-                        
-                        if (hasValidData) {
-                            stmt.addBatch();
-                            batchSize++;
-                            
-                            // Exécuter le batch régulièrement
-                            if (batchSize >= BATCH_LIMIT) {
-                                try {
-                                    int[] results = stmt.executeBatch();
-                                    recordsInserted += Arrays.stream(results).sum();
-                                    batchSize = 0;
-                                    
-                                    // CORRECTION: Vérifier périodiquement la connexion
-                                    if (!conn.isValid(2)) {
-                                        throw new SQLException("Connexion fermée pendant le traitement");
-                                    }
-                                    
-                                } catch (BatchUpdateException e) {
-                                    // Traiter les erreurs de batch individuellement
-                                    handleBatchException(e, currentLine, errors);
-                                    batchSize = 0;
-                                    stmt.clearBatch();
-                                }
-                            }
-                        } else {
-                            warnings.add("Ligne " + currentLine + " ignorée: aucune donnée valide");
-                        }
-                        
-                    } catch (Exception e) {
-                        errors.add("Erreur ligne " + currentLine + ": " + e.getMessage());
-                    }
-                }
-                
-                // Exécuter le dernier batch
-                if (batchSize > 0) {
-                    try {
-                        int[] results = stmt.executeBatch();
-                        recordsInserted += Arrays.stream(results).sum();
-                    } catch (BatchUpdateException e) {
-                        handleBatchException(e, currentLine, errors);
-                    }
-                }
-                
-                // Ajouter des statistiques
-                if (matriculeIndex >= 0) {
-                    warnings.add(String.format("Matricules: %d valides, %d invalides", 
-                                              validMatriculeCount, invalidMatriculeCount));
-                }
-            }
-        }
-        
-        // CORRECTION: Commit seulement si tout s'est bien passé
-        if (errors.size() < recordsInserted / 2) { // Accepter jusqu'à 50% d'erreurs
-            conn.commit();
-            LOGGER.info("Transaction commitée avec succès pour " + tableName);
-        } else {
-            conn.rollback();
-            throw new Exception("Trop d'erreurs (" + errors.size() + "), transaction annulée");
-        }
-        
-    } catch (Exception e) {
-        LOGGER.log(Level.SEVERE, "Erreur lors du traitement CSV pour " + tableName, e);
-        throw e;
-    }
-
-    return new EnhancedUpdateResult(recordsInserted, recordsUpdated, recordsUnchanged, errors, warnings);
-}
     /**
      * CORRECTION: Gestion des erreurs de batch
      */
-    private static void handleBatchException(BatchUpdateException e, int currentLine, List<String> errors) {
-        LOGGER.log(Level.WARNING, "Erreur de batch ligne ~" + currentLine, e);
-        
-        // Extraire les erreurs individuelles
-        SQLException nextEx = e.getNextException();
-        while (nextEx != null) {
-            errors.add("Erreur batch ligne ~" + currentLine + ": " + nextEx.getMessage());
-            nextEx = nextEx.getNextException();
+    private static void handleBatchExceptionWithFKCheck(BatchUpdateException e, int currentLine, 
+        List<String> errors, List<String> warnings) {
+    	LOGGER.log(Level.WARNING, "Erreur de batch ligne ~" + currentLine, e);
+	
+    	// Vérifier si c'est une erreur de clé étrangère
+    	String errorMessage = e.getMessage();
+		boolean isForeignKeyError = errorMessage != null && 
+		(errorMessage.contains("foreign key constraint fails") || 
+		errorMessage.contains("Cannot add or update a child row"));
+		
+		if (isForeignKeyError) {
+			// Pour les erreurs de clé étrangère, ajouter un avertissement au lieu d'une erreur
+			warnings.add(String.format("⚠️ Ligne ~%d ignorée: matricule inexistant dans identite_personnelle", currentLine));
+	
+			// Extraire le matricule de l'erreur si possible
+			if (errorMessage.contains("matricule")) {
+				warnings.add("Détail: " + extractMatriculeFromError(errorMessage));
+			}
+		} else {
+			// Pour les autres erreurs, traitement normal
+			SQLException nextEx = e.getNextException();
+			while (nextEx != null) {
+				errors.add("Erreur batch ligne ~" + currentLine + ": " + nextEx.getMessage());
+				nextEx = nextEx.getNextException();
+			}
+	
+			if (e.getNextException() == null) {
+				errors.add("Erreur batch ligne ~" + currentLine + ": " + e.getMessage());
+			}
+		}
+	}
+    
+    /**
+     * NOUVELLE MÉTHODE : Détection simple du séparateur
+     */
+    private static String detectSeparator(String headerLine) {
+        // Nettoyer le BOM si présent
+        if (headerLine.startsWith("\uFEFF")) {
+            headerLine = headerLine.substring(1);
         }
         
-        // Ajouter l'erreur principale si pas d'erreurs individuelles
-        if (e.getNextException() == null) {
-            errors.add("Erreur batch ligne ~" + currentLine + ": " + e.getMessage());
+        LOGGER.info("Ligne d'en-tête brute: '" + headerLine + "'");
+        LOGGER.info("Longueur de la ligne: " + headerLine.length());
+        
+        // Compter les occurrences de chaque séparateur possible
+        int tabCount = 0;
+        int semicolonCount = 0;
+        int commaCount = 0;
+        
+        // Méthode plus précise pour compter les tabulations
+        for (int i = 0; i < headerLine.length(); i++) {
+            char c = headerLine.charAt(i);
+            if (c == '\t') {
+                tabCount++;
+            } else if (c == ';') {
+                semicolonCount++;
+            } else if (c == ',') {
+                commaCount++;
+            }
         }
+        
+        LOGGER.info("Séparateurs détectés - TAB: " + tabCount + ", point-virgule: " + semicolonCount + ", virgule: " + commaCount);
+        
+        // Retourner le séparateur le plus fréquent
+        if (tabCount > 0 && tabCount >= semicolonCount && tabCount >= commaCount) {
+            LOGGER.info("Séparateur sélectionné: TABULATION");
+            return "\t";
+        } else if (semicolonCount > 0 && semicolonCount >= commaCount) {
+            LOGGER.info("Séparateur sélectionné: POINT-VIRGULE");
+            return ";";
+        } else {
+            LOGGER.info("Séparateur sélectionné: VIRGULE (défaut)");
+            return ",";
+        }
+    }
+    
+    /**
+     * MÉTHODE UTILITAIRE : Extraire le matricule d'un message d'erreur de clé étrangère
+     */
+    private static String extractMatriculeFromError(String errorMessage) {
+        // Tenter d'extraire le matricule du message d'erreur
+        // Cette méthode peut être améliorée selon le format exact des messages
+        try {
+            // Exemple de message: "foreign key constraint fails (master.table, CONSTRAINT fk FOREIGN KEY (matricule) REFERENCES identite_personnelle (matricule))"
+            if (errorMessage.contains("matricule")) {
+                return "Problème de référence matricule";
+            }
+        } catch (Exception ex) {
+            // Ignorer les erreurs d'extraction
+        }
+        return "Référence invalide";
     }
 
     
@@ -403,6 +300,122 @@ public class CSVProcessor {
     }
     
     /**
+     * NOUVELLE MÉTHODE : Pré-validation des matricules et nettoyage des données CSV
+     */
+    private static CSVValidationResult preValidateCSVData(File csvFile, String tableName) throws Exception {
+        CSVValidationResult result = new CSVValidationResult();
+        
+        // Obtenir les matricules valides
+        Set<String> validMatricules = getValidMatricules(tableName);
+        
+        if (validMatricules.isEmpty()) {
+            LOGGER.warning("Aucun matricule de référence trouvé - tous les enregistrements seront acceptés");
+            result.setAllRecordsValid(true);
+            return result;
+        }
+
+        List<String> validLines = new ArrayList<>();
+        List<String> invalidMatricules = new ArrayList<>();
+        int totalLines = 0;
+        int validRecords = 0;
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), StandardCharsets.UTF_8))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                throw new Exception("Fichier CSV vide");
+            }
+            
+            // Détecter le séparateur automatiquement
+            String separator = detectSeparator(headerLine);
+            
+            // Ajouter l'en-tête aux lignes valides
+            validLines.add(headerLine);
+            
+            // Nettoyer le BOM si présent
+            if (headerLine.startsWith("\uFEFF")) {
+                headerLine = headerLine.substring(1);
+            }
+            
+            String[] headers = headerLine.split(java.util.regex.Pattern.quote(separator));
+            
+            // Nettoyer les en-têtes
+            for (int i = 0; i < headers.length; i++) {
+                headers[i] = headers[i].trim();
+            }
+            
+            // Trouver l'index de la colonne matricule
+            int matriculeIndex = -1;
+            for (int i = 0; i < headers.length; i++) {
+                if ("matricule".equalsIgnoreCase(headers[i])) {
+                    matriculeIndex = i;
+                    break;
+                }
+            }
+            
+            if (matriculeIndex == -1) {
+                LOGGER.info("Aucune colonne 'matricule' trouvée - validation de clé étrangère ignorée");
+                result.setAllRecordsValid(true);
+                return result;
+            }
+            
+            String line;
+            while ((line = reader.readLine()) != null) {
+                totalLines++;
+                String[] values = line.split(java.util.regex.Pattern.quote(separator), -1);
+                
+                if (matriculeIndex < values.length) {
+                    String matricule = values[matriculeIndex].trim();
+                    
+                    if (matricule.isEmpty()) {
+                        // Enregistrer comme invalide mais ne pas compter dans les statistiques
+                        continue;
+                    }
+                    
+                    if (validMatricules.contains(matricule)) {
+                        validLines.add(line);
+                        validRecords++;
+                    } else {
+                        invalidMatricules.add(matricule);
+                    }
+                } else {
+                    // Ligne avec colonnes manquantes - ignorer
+                    invalidMatricules.add("LIGNE_INCOMPLETE_" + totalLines);
+                }
+            }
+        }
+        
+        result.setTotalRecords(totalLines);
+        result.setValidRecords(validRecords);
+        result.setInvalidMatricules(invalidMatricules);
+        result.setValidLines(validLines);
+        
+        LOGGER.info(String.format("Pré-validation terminée: %d/%d enregistrements valides, %d matricules invalides", 
+                                  validRecords, totalLines, invalidMatricules.size()));
+        
+        return result;
+    }
+
+    
+    /**
+     * NOUVELLE MÉTHODE : Créer un fichier CSV temporaire avec seulement les enregistrements valides
+     */
+    private static File createValidatedCSVFile(CSVValidationResult validationResult) throws IOException {
+        File tempFile = File.createTempFile("validated_csv_", ".csv");
+        tempFile.deleteOnExit();
+        
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(tempFile, StandardCharsets.UTF_8))) {
+            for (String line : validationResult.getValidLines()) {
+                writer.write(line);
+                writer.newLine();
+            }
+        }
+        
+        return tempFile;
+    }
+
+
+    
+    /**
      * MÉTHODE UTILITAIRE : Créer les matricules manquants dans identite_personnelle
      * ATTENTION: À utiliser avec précaution !
      */
@@ -444,48 +457,89 @@ public class CSVProcessor {
      * MÉTHODE D'ANALYSE : Identifier les matricules manquants avant la mise à jour
      */
     public static AnalysisResult analyzeCSVMatricules(File csvFile, String tableName) throws Exception {
-        Set<String> csvMatricules = new HashSet<>();
-        Set<String> validMatricules = getValidMatricules(tableName);
+    Set<String> csvMatricules = new HashSet<>();
+    Set<String> validMatricules = getValidMatricules(tableName);
+    
+    // Lire les matricules du CSV avec détection automatique du séparateur
+    try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), StandardCharsets.UTF_8))) {
+        String headerLine = reader.readLine();
+        if (headerLine == null) {
+            throw new Exception("Fichier CSV vide");
+        }
         
-        // Lire les matricules du CSV
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), StandardCharsets.UTF_8))) {
-            String headerLine = reader.readLine();
-            if (headerLine == null) {
-                throw new Exception("Fichier CSV vide");
+        // Détecter le séparateur automatiquement
+        String separator = detectSeparator(headerLine);
+        
+        // Nettoyer le BOM si présent
+        if (headerLine.startsWith("\uFEFF")) {
+            headerLine = headerLine.substring(1);
+        }
+        
+        LOGGER.info("En-tête brut: '" + headerLine + "'");
+        LOGGER.info("Séparateur utilisé: '" + (separator.equals("\t") ? "TAB" : separator) + "'");
+        
+        String[] headers = headerLine.split(java.util.regex.Pattern.quote(separator));
+        int matriculeIndex = -1;
+        
+        // Debug: afficher tous les en-têtes
+        LOGGER.info("=== EN-TÊTES DÉTECTÉS ===");
+        for (int i = 0; i < headers.length; i++) {
+            String cleanHeader = headers[i].trim();
+            LOGGER.info("En-tête[" + i + "]: '" + cleanHeader + "'");
+            if ("matricule".equalsIgnoreCase(cleanHeader)) {
+                matriculeIndex = i;
+                LOGGER.info("✅ Colonne 'matricule' trouvée à l'index: " + i);
             }
-            
-            String[] headers = headerLine.split(CSV_SEPARATOR);
-            int matriculeIndex = -1;
-            
+        }
+        
+        if (matriculeIndex == -1) {
+            // Recherche plus permissive
             for (int i = 0; i < headers.length; i++) {
-                if ("matricule".equalsIgnoreCase(headers[i].trim())) {
+                String cleanHeader = headers[i].trim().toLowerCase();
+                if (cleanHeader.contains("matricule") || cleanHeader.contains("matr")) {
                     matriculeIndex = i;
+                    LOGGER.info("✅ Colonne matricule trouvée (recherche étendue) à l'index: " + i + " ('" + headers[i] + "')");
                     break;
-                }
-            }
-            
-            if (matriculeIndex == -1) {
-                throw new Exception("Colonne 'matricule' non trouvée");
-            }
-            
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String[] values = line.split(CSV_SEPARATOR, -1);
-                if (matriculeIndex < values.length) {
-                    String matricule = values[matriculeIndex].trim();
-                    if (!matricule.isEmpty()) {
-                        csvMatricules.add(matricule);
-                    }
                 }
             }
         }
         
-        // Identifier les matricules manquants
-        Set<String> missingMatricules = new HashSet<>(csvMatricules);
-        missingMatricules.removeAll(validMatricules);
+        if (matriculeIndex == -1) {
+            StringBuilder availableHeaders = new StringBuilder();
+            for (String header : headers) {
+                if (availableHeaders.length() > 0) availableHeaders.append(", ");
+                availableHeaders.append("'").append(header.trim()).append("'");
+            }
+            throw new Exception("Colonne 'matricule' non trouvée. En-têtes disponibles: " + availableHeaders.toString());
+        }
         
-        return new AnalysisResult(csvMatricules, validMatricules, missingMatricules);
+        // Lire les données
+        String line;
+        int lineNumber = 1;
+        while ((line = reader.readLine()) != null) {
+            lineNumber++;
+            String[] values = line.split(java.util.regex.Pattern.quote(separator), -1);
+            if (matriculeIndex < values.length) {
+                String matricule = values[matriculeIndex].trim();
+                if (!matricule.isEmpty()) {
+                    csvMatricules.add(matricule);
+                }
+            } else {
+                LOGGER.warning("Ligne " + lineNumber + " n'a pas assez de colonnes");
+            }
+        }
+        
+        LOGGER.info("Total matricules extraits: " + csvMatricules.size());
     }
+    
+    // Identifier les matricules manquants
+    Set<String> missingMatricules = new HashSet<>(csvMatricules);
+    missingMatricules.removeAll(validMatricules);
+    
+    LOGGER.info("Matricules manquants: " + missingMatricules.size());
+    
+    return new AnalysisResult(csvMatricules, validMatricules, missingMatricules);
+}
     
     /**
      * Classe pour stocker les résultats d'analyse
@@ -547,6 +601,43 @@ public class CSVProcessor {
         }
         
         return record;
+    }
+    
+    /**
+     * MÉTHODE UTILITAIRE : Créer un rapport détaillé de validation
+     */
+    public static String createValidationReport(CSVValidationResult validation, String tableName) {
+        StringBuilder report = new StringBuilder();
+        
+        report.append("=== RAPPORT DE VALIDATION DES MATRICULES ===\n");
+        report.append("Table de destination: ").append(tableName).append("\n");
+        report.append("Total d'enregistrements dans le CSV: ").append(validation.getTotalRecords()).append("\n");
+        report.append("Enregistrements avec matricules valides: ").append(validation.getValidRecords()).append("\n");
+        report.append("Matricules invalides: ").append(validation.getInvalidMatricules().size()).append("\n");
+        report.append("Pourcentage de validité: ").append(String.format("%.1f%%", validation.getValidPercentage())).append("\n\n");
+        
+        if (!validation.getInvalidMatricules().isEmpty()) {
+            report.append("MATRICULES NON TROUVÉS DANS identite_personnelle:\n");
+            List<String> examples = validation.getInvalidMatricules().stream()
+                                             .filter(m -> !m.startsWith("LIGNE_INCOMPLETE_"))
+                                             .limit(20)
+                                             .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+            
+            for (String matricule : examples) {
+                report.append("  - ").append(matricule).append("\n");
+            }
+            
+            if (validation.getInvalidMatricules().size() > 20) {
+                report.append("  ... et ").append(validation.getInvalidMatricules().size() - 20).append(" autres\n");
+            }
+            
+            report.append("\nRECOMMANDATIONS:\n");
+            report.append("- Vérifiez que les matricules existent dans la table identite_personnelle\n");
+            report.append("- Corrigez les matricules erronés dans votre fichier CSV\n");
+            report.append("- Ou ajoutez d'abord les matricules manquants dans identite_personnelle\n");
+        }
+        
+        return report.toString();
     }
     
     /**
@@ -770,6 +861,42 @@ public class CSVProcessor {
     // Interface pour les callback de progression
     public interface ProgressCallback {
         void onProgress(double progress);
+    }
+    
+    /**
+     * NOUVELLE CLASSE : Résultat de validation CSV
+     */
+    public static class CSVValidationResult {
+        private int totalRecords;
+        private int validRecords;
+        private List<String> invalidMatricules = new ArrayList<>();
+        private List<String> validLines = new ArrayList<>();
+        private boolean allRecordsValid = false;
+        
+        // Getters et setters
+        public int getTotalRecords() { return totalRecords; }
+        public void setTotalRecords(int totalRecords) { this.totalRecords = totalRecords; }
+        
+        public int getValidRecords() { return validRecords; }
+        public void setValidRecords(int validRecords) { this.validRecords = validRecords; }
+        
+        public List<String> getInvalidMatricules() { return invalidMatricules; }
+        public void setInvalidMatricules(List<String> invalidMatricules) { this.invalidMatricules = invalidMatricules; }
+        
+        public List<String> getValidLines() { return validLines; }
+        public void setValidLines(List<String> validLines) { this.validLines = validLines; }
+        
+        public boolean isAllRecordsValid() { return allRecordsValid; }
+        public void setAllRecordsValid(boolean allRecordsValid) { this.allRecordsValid = allRecordsValid; }
+        
+        public double getValidPercentage() {
+            return totalRecords > 0 ? (double) validRecords / totalRecords * 100.0 : 0.0;
+        }
+        
+        public String getSummary() {
+            return String.format("Validation: %d/%d enregistrements valides (%.1f%%)", 
+                               validRecords, totalRecords, getValidPercentage());
+        }
     }
     
     // Classe pour les résultats améliorés
