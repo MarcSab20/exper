@@ -4,6 +4,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.text.Text?>
 
 <VBox xmlns="http://javafx.com/javafx"
       xmlns:fx="http://javafx.com/fxml"
@@ -11,38 +12,110 @@
       stylesheets="@dashboardCss.css"
       styleClass="main-container">
 
-    <MenuBar>
-        <Menu text="Options">
-            <MenuItem text="Personnaliser" onAction="#showCustomizeDialog"/>
-        </Menu>
-    </MenuBar>
+    <!-- Header avec bouton Options -->
+    <HBox styleClass="dashboard-header" alignment="CENTER_RIGHT" spacing="20">
+        <padding>
+            <Insets top="15" right="25" bottom="10" left="25"/>
+        </padding>
+        
+        <!-- Informations de service (optionnel) -->
+        <Region HBox.hgrow="ALWAYS"/>
+        
+        <!-- Bouton de personnalisation bien visible -->
+        <Button onAction="#showCustomizeDialog" 
+                styleClass="options-button" 
+                text="⚙️ Personnaliser Dashboard"/>
+    </HBox>
 
-    <FlowPane styleClass="stats-bar" hgap="20" vgap="20">
-        <VBox fx:id="messagesBox" styleClass="stat-box">
-            <Label fx:id="messagesLabel" styleClass="stat-label"/>
-            <Label fx:id="messagesCount" styleClass="stat-value"/>
+    <!-- Barre de statistiques -->
+    <FlowPane styleClass="stats-bar" hgap="25" vgap="20" alignment="CENTER">
+        <padding>
+            <Insets top="20" right="25" bottom="20" left="25"/>
+        </padding>
+        
+        <VBox fx:id="messagesBox" styleClass="stat-box" alignment="CENTER" spacing="12">
+            <Label fx:id="messagesLabel" styleClass="stat-label" text="Messages"/>
+            <Label fx:id="messagesCount" styleClass="stat-value" text="0"/>
         </VBox>
 
-        <VBox fx:id="salesBox" styleClass="stat-box">
-            <Label fx:id="salesLabel" styleClass="stat-label"/>
-            <Label fx:id="salesCount" styleClass="stat-value"/>
+        <VBox fx:id="salesBox" styleClass="stat-box" alignment="CENTER" spacing="12">
+            <Label fx:id="salesLabel" styleClass="stat-label" text="Ventes"/>
+            <Label fx:id="salesCount" styleClass="stat-value" text="0"/>
         </VBox>
 
-        <VBox fx:id="notificationsBox" styleClass="stat-box">
-            <Label fx:id="notificationsLabel" styleClass="stat-label"/>
-            <Label fx:id="notificationsCount" styleClass="stat-value"/>
+        <VBox fx:id="notificationsBox" styleClass="stat-box" alignment="CENTER" spacing="12">
+            <Label fx:id="notificationsLabel" styleClass="stat-label" text="Notifications"/>
+            <Label fx:id="notificationsCount" styleClass="stat-value" text="0"/>
         </VBox>
 
-        <VBox fx:id="scheduledBox" styleClass="stat-box">
-            <Label fx:id="scheduledLabel" styleClass="stat-label"/>
-            <Label fx:id="scheduledCount" styleClass="stat-value"/>
+        <VBox fx:id="scheduledBox" styleClass="stat-box" alignment="CENTER" spacing="12">
+            <Label fx:id="scheduledLabel" styleClass="stat-label" text="Planifiés"/>
+            <Label fx:id="scheduledCount" styleClass="stat-value" text="0"/>
         </VBox>
     </FlowPane>
 
-    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS">
-        <FlowPane fx:id="chartsContainer" hgap="10" vgap="10" styleClass="charts-container">
-            <!-- Les graphiques seront ajoutés ici dynamiquement -->
+    <!-- Titre de section avec informations -->
+    <HBox alignment="CENTER_LEFT" spacing="20" style="-fx-padding: 15 25 10 25;">
+        <Text text="📊 Graphiques du Dashboard" 
+              style="-fx-font-size: 18px; -fx-font-weight: bold; -fx-fill: #2c3e50;"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Label fx:id="serviceInfoLabel" 
+               style="-fx-font-size: 12px; -fx-text-fill: #6c757d; -fx-font-style: italic;"
+               text="Service: Admin | Tables: 0"/>
+    </HBox>
+
+    <!-- Conteneur principal de graphiques avec scroll -->
+    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS" styleClass="charts-scroll">
+        <padding>
+            <Insets top="5" right="0" bottom="20" left="0"/>
+        </padding>
+        
+        <!-- Conteneur des graphiques avec FlowPane amélioré -->
+        <FlowPane fx:id="chartsContainer" 
+                  styleClass="charts-container" 
+                  alignment="TOP_CENTER"
+                  hgap="25" 
+                  vgap="25"
+                  prefWrapLength="999999">
+            <padding>
+                <Insets top="15" right="25" bottom="15" left="25"/>
+            </padding>
+            
+            <!-- Message par défaut quand aucun graphique n'est présent -->
+            <VBox alignment="CENTER" spacing="15" 
+                  style="-fx-min-width: 400; -fx-min-height: 200; -fx-background-color: #f8f9fa; -fx-background-radius: 15; -fx-border-color: #dee2e6; -fx-border-width: 2; -fx-border-style: dashed; -fx-border-radius: 15;"
+                  fx:id="emptyStateMessage">
+                <Text text="📈" style="-fx-font-size: 48px;"/>
+                <Text text="Aucun graphique à afficher" 
+                      style="-fx-font-size: 16px; -fx-font-weight: bold; -fx-fill: #6c757d;"/>
+                <Text text="Cliquez sur 'Personnaliser Dashboard' pour ajouter des graphiques" 
+                      style="-fx-font-size: 12px; -fx-fill: #adb5bd; -fx-text-alignment: center; -fx-wrap-text: true;"
+                      wrappingWidth="300"/>
+            </VBox>
         </FlowPane>
     </ScrollPane>
+
+    <!-- Footer avec informations additionnelles -->
+    <HBox alignment="CENTER" spacing="30" 
+          style="-fx-background-color: #f8f9fa; -fx-padding: 15 25; -fx-border-color: #dee2e6; -fx-border-width: 1 0 0 0;">
+        
+        <HBox alignment="CENTER_LEFT" spacing="8">
+            <Text text="🔄" style="-fx-font-size: 14px;"/>
+            <Text text="Dernière actualisation:" 
+                  style="-fx-font-size: 12px; -fx-fill: #6c757d;"/>
+            <Text fx:id="lastUpdateTime" 
+                  text="Maintenant" 
+                  style="-fx-font-size: 12px; -fx-fill: #2c3e50; -fx-font-weight: bold;"/>
+        </HBox>
+        
+        <Region HBox.hgrow="ALWAYS"/>
+        
+        <HBox alignment="CENTER_RIGHT" spacing="8">
+            <Text text="📋" style="-fx-font-size: 14px;"/>
+            <Text fx:id="chartsCount" 
+                  text="0 graphique(s) affiché(s)" 
+                  style="-fx-font-size: 12px; -fx-fill: #6c757d;"/>
+        </HBox>
+    </HBox>
 
 </VBox>
