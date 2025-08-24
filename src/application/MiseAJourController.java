@@ -782,6 +782,7 @@ public class MiseAJourController {
         updateThread.start();
     }
     
+    @FXML
     private void loadUpdateHistory() {
         try {
             Platform.runLater(() -> {

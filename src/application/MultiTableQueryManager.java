@@ -6,8 +6,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Gestionnaire de requêtes multi-tables permettant d'interroger plusieurs tables
- * liées par la clé matricule automatiquement
+ * Gestionnaire de requêtes multi-tables amélioré avec meilleure détection des colonnes
  */
 public class MultiTableQueryManager {
     private static final Logger LOGGER = Logger.getLogger(MultiTableQueryManager.class.getName());
@@ -16,40 +15,61 @@ public class MultiTableQueryManager {
     private static final String DB_USER = "marco";
     private static final String DB_PASSWORD = "29Papa278.";
     
-    // Cache pour les colonnes par table
+    // Cache amélioré pour les colonnes par table
     private static final Map<String, List<String>> TABLE_COLUMNS_CACHE = new HashMap<>();
+    private static final Map<String, String> COLUMN_TO_TABLE_CACHE = new HashMap<>();
     
     /**
-     * Détermine automatiquement les tables nécessaires pour les colonnes utilisées
+     * AMÉLIORATION : Construction intelligente de requête multi-tables avec détection automatique
      */
     public static QueryInfo buildMultiTableQuery(List<String> usedColumns, List<String> constraints, 
                                                 String service, String formatSortie) {
         try {
-            Map<String, Set<String>> tablesForColumns = findTablesForColumns(usedColumns, service);
-            Set<String> requiredTables = new HashSet<>();
+            // Construire le cache des colonnes si nécessaire
+            buildColumnCache(service);
             
-            // Ajouter les tables nécessaires pour chaque colonne
-            for (String column : usedColumns) {
-                if (tablesForColumns.containsKey(column)) {
-                    requiredTables.addAll(tablesForColumns.get(column));
+            // Analyser les contraintes pour identifier les colonnes utilisées
+            Set<String> allUsedColumns = new HashSet<>(usedColumns);
+            for (String constraint : constraints) {
+                String columnInConstraint = extractColumnFromConstraint(constraint);
+                if (columnInConstraint != null) {
+                    allUsedColumns.add(columnInConstraint);
                 }
             }
             
-            // Ajouter les tables nécessaires pour les contraintes
-            for (String constraint : constraints) {
-                String columnInConstraint = extractColumnFromConstraint(constraint);
-                if (columnInConstraint != null && tablesForColumns.containsKey(columnInConstraint)) {
-                    requiredTables.addAll(tablesForColumns.get(columnInConstraint));
+            // Identifier les tables nécessaires pour toutes les colonnes utilisées
+            Set<String> requiredTables = new HashSet<>();
+            Map<String, String> columnToTableMapping = new HashMap<>();
+            
+            for (String column : allUsedColumns) {
+                String tableForColumn = findTableForColumn(column, service);
+                if (tableForColumn != null) {
+                    requiredTables.add(tableForColumn);
+                    columnToTableMapping.put(column, tableForColumn);
+                    LOGGER.info("Colonne '" + column + "' trouvée dans la table '" + tableForColumn + "'");
+                } else {
+                    LOGGER.warning("Colonne '" + column + "' non trouvée dans aucune table accessible au service " + service);
                 }
             }
             
             // Si aucune table spécifique n'est trouvée, utiliser identite_personnelle par défaut
             if (requiredTables.isEmpty()) {
                 requiredTables.add("identite_personnelle");
+                LOGGER.info("Aucune table spécifique trouvée, utilisation de identite_personnelle par défaut");
             }
             
-            // Construire la requête
-            String query = buildJoinQuery(new ArrayList<>(requiredTables), usedColumns, constraints, formatSortie);
+            // Construire la requête avec les bonnes tables
+            String query = buildJoinQueryWithMapping(new ArrayList<>(requiredTables), usedColumns, 
+                                                   constraints, formatSortie, columnToTableMapping);
+            
+            // Créer le mapping pour le résultat
+            Map<String, Set<String>> tablesForColumns = new HashMap<>();
+            for (String column : allUsedColumns) {
+                String table = columnToTableMapping.get(column);
+                if (table != null) {
+                    tablesForColumns.computeIfAbsent(column, k -> new HashSet<>()).add(table);
+                }
+            }
             
             return new QueryInfo(query, new ArrayList<>(requiredTables), tablesForColumns);
             
@@ -60,32 +80,83 @@ public class MultiTableQueryManager {
     }
     
     /**
-     * Trouve les tables qui contiennent chaque colonne
+     * NOUVELLE MÉTHODE : Construit le cache des colonnes pour un service
      */
-    private static Map<String, Set<String>> findTablesForColumns(List<String> columns, String service) {
-        Map<String, Set<String>> result = new HashMap<>();
+    private static void buildColumnCache(String service) {
         List<String> availableTables = ServicePermissions.getTablesForService(service);
         
-        for (String column : columns) {
-            Set<String> tablesWithColumn = new HashSet<>();
-            
-            for (String table : availableTables) {
-                List<String> tableColumns = getTableColumns(table);
-                if (tableColumns.contains(column)) {
-                    tablesWithColumn.add(table);
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
+            for (String tableName : availableTables) {
+                if (!TABLE_COLUMNS_CACHE.containsKey(tableName)) {
+                    List<String> columns = getTableColumns(tableName, conn);
+                    TABLE_COLUMNS_CACHE.put(tableName, columns);
+                    
+                    // Construire le cache inverse (colonne -> table)
+                    for (String column : columns) {
+                        if (!COLUMN_TO_TABLE_CACHE.containsKey(column)) {
+                            COLUMN_TO_TABLE_CACHE.put(column, tableName);
+                        }
+                    }
                 }
             }
-            
-            if (!tablesWithColumn.isEmpty()) {
-                result.put(column, tablesWithColumn);
-            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de la construction du cache des colonnes", e);
         }
-        
-        return result;
     }
     
     /**
-     * Obtient les colonnes d'une table (avec cache)
+     * NOUVELLE MÉTHODE : Trouve la table qui contient une colonne spécifique
+     */
+    private static String findTableForColumn(String columnName, String service) {
+        // Vérifier d'abord le cache inverse
+        if (COLUMN_TO_TABLE_CACHE.containsKey(columnName)) {
+            String cachedTable = COLUMN_TO_TABLE_CACHE.get(columnName);
+            // Vérifier que cette table est accessible pour le service
+            if (ServicePermissions.getTablesForService(service).contains(cachedTable)) {
+                return cachedTable;
+            }
+        }
+        
+        // Recherche manuelle dans toutes les tables du service
+        List<String> availableTables = ServicePermissions.getTablesForService(service);
+        
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
+            for (String tableName : availableTables) {
+                List<String> columns = getTableColumns(tableName, conn);
+                if (columns.contains(columnName)) {
+                    COLUMN_TO_TABLE_CACHE.put(columnName, tableName);
+                    return tableName;
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.WARNING, "Erreur lors de la recherche de la table pour la colonne " + columnName, e);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * MÉTHODE AMÉLIORÉE : Obtient les colonnes d'une table avec connexion partagée
+     */
+    private static List<String> getTableColumns(String tableName, Connection conn) throws SQLException {
+        if (TABLE_COLUMNS_CACHE.containsKey(tableName)) {
+            return TABLE_COLUMNS_CACHE.get(tableName);
+        }
+        
+        List<String> columns = new ArrayList<>();
+        DatabaseMetaData metaData = conn.getMetaData();
+        try (ResultSet rs = metaData.getColumns("master", null, tableName, null)) {
+            while (rs.next()) {
+                columns.add(rs.getString("COLUMN_NAME"));
+            }
+        }
+        
+        TABLE_COLUMNS_CACHE.put(tableName, columns);
+        return columns;
+    }
+    
+    /**
+     * Obtient les colonnes d'une table (méthode publique existante)
      */
     private static List<String> getTableColumns(String tableName) {
         if (TABLE_COLUMNS_CACHE.containsKey(tableName)) {
@@ -110,124 +181,130 @@ public class MultiTableQueryManager {
     }
     
     /**
-     * Extrait le nom de colonne d'une contrainte
+     * MÉTHODE AMÉLIORÉE : Construit une requête avec JOINs utilisant le mapping des colonnes
      */
-    private static String extractColumnFromConstraint(String constraint) {
-        // Format attendu: "colonne operateur valeur"
-        String[] parts = constraint.split("\\s+");
-        return parts.length > 0 ? parts[0] : null;
-    }
-    
-    /**
-     * Construit une requête avec JOINs automatiques
-     */
-    private static String buildJoinQuery(List<String> tables, List<String> usedColumns, 
-    	List<String> constraints, String formatSortie) {
-    	StringBuilder query = new StringBuilder();
-	
-    	// SELECT clause
-    	query.append("SELECT ");
-	
-    	if ("Graphique".equals(formatSortie)) {
-    		// Pour les graphiques, on a besoin d'un COUNT et du GROUP BY
-    		if (usedColumns.size() == 1) {
-    			query.append("COUNT(*) AS count, ");
-    			query.append(buildQualifiedColumnName(usedColumns.get(0), tables));
-    		} else {
-    			// Pour les graphiques à 2 variables
-    			query.append(buildQualifiedColumnName(usedColumns.get(0), tables)).append(", ");
-    			query.append(buildQualifiedColumnName(usedColumns.get(1), tables));
-    			if (usedColumns.size() > 2) {
-    				query.append(", COUNT(*) AS count");
-    			}
-    		}
-    	} else {
-    		// Pour les listes et tableaux
-    		List<String> qualifiedColumns = new ArrayList<>();
-    		for (String column : usedColumns) {
-    			qualifiedColumns.add(buildQualifiedColumnName(column, tables));
-    		}
-    		query.append(String.join(", ", qualifiedColumns));
-    	}
-	
-    	// FROM clause avec JOINs INNER au lieu de LEFT JOIN pour éviter les valeurs nulles
-    	query.append(" FROM ");
-	
-    	if (tables.size() == 1) {
-    		// Une seule table
-    		query.append(tables.get(0));
-    	} else {
-    		// Plusieurs tables - construire les JOINs
-    		String mainTable = findMainTable(tables);
-    		query.append(mainTable);
-	
-    		for (String table : tables) {
-    			if (!table.equals(mainTable)) {
-    				// Utiliser INNER JOIN au lieu de LEFT JOIN pour de meilleures performances
-    				// et éviter les résultats avec des valeurs nulles
-    				query.append(" INNER JOIN ").append(table);
-    				query.append(" ON ").append(mainTable).append(".matricule = ").append(table).append(".matricule");
-    			}
-    		}
-    	}
-	
-    	// WHERE clause
-    	if (!constraints.isEmpty()) {
-    		query.append(" WHERE ");
-    		List<String> qualifiedConstraints = new ArrayList<>();
-	
-    		for (String constraint : constraints) {
-    			String qualifiedConstraint = qualifyConstraint(constraint, tables);
-    			qualifiedConstraints.add(qualifiedConstraint);
-    		}
-	
-    		query.append(String.join(" AND ", qualifiedConstraints));
-    	}
-	
-    	// GROUP BY pour les graphiques
-    	if ("Graphique".equals(formatSortie)) {
-    		query.append(" GROUP BY ");
-    		if (usedColumns.size() == 1) {
-    			query.append(buildQualifiedColumnName(usedColumns.get(0), tables));
-    		} else {
-    			List<String> groupByColumns = new ArrayList<>();
-    			for (String column : usedColumns) {
-    				if (!column.equalsIgnoreCase("count")) {
-    					groupByColumns.add(buildQualifiedColumnName(column, tables));
-    				}
-    			}
-    			query.append(String.join(", ", groupByColumns));
-    		}
-    	}
-
-    	return query.toString();
-    }
-   
-    
-    /**
-     * Construit un nom de colonne qualifié (table.colonne)
-     */
-    private static String buildQualifiedColumnName(String column, List<String> tables) {
-        // Trouver la table qui contient cette colonne
-        for (String table : tables) {
-            List<String> tableColumns = getTableColumns(table);
-            if (tableColumns.contains(column)) {
-                return table + "." + column;
+    private static String buildJoinQueryWithMapping(List<String> tables, List<String> usedColumns, 
+            List<String> constraints, String formatSortie, Map<String, String> columnToTableMapping) {
+        
+        StringBuilder query = new StringBuilder();
+        
+        // SELECT clause
+        query.append("SELECT ");
+        
+        if ("Graphique".equals(formatSortie)) {
+            // Pour les graphiques, on a besoin d'un COUNT et du GROUP BY
+            if (usedColumns.size() == 1) {
+                query.append("COUNT(*) AS count, ");
+                String column = usedColumns.get(0);
+                String table = columnToTableMapping.get(column);
+                if (table != null) {
+                    query.append(table).append(".").append(column);
+                } else {
+                    query.append(column);
+                }
+            } else {
+                // Pour les graphiques à 2 variables
+                for (int i = 0; i < usedColumns.size(); i++) {
+                    if (i > 0) query.append(", ");
+                    String column = usedColumns.get(i);
+                    String table = columnToTableMapping.get(column);
+                    if (table != null) {
+                        query.append(table).append(".").append(column);
+                    } else {
+                        query.append(column);
+                    }
+                }
+                if (usedColumns.size() > 2) {
+                    query.append(", COUNT(*) AS count");
+                }
+            }
+        } else {
+            // Pour les listes et tableaux
+            List<String> qualifiedColumns = new ArrayList<>();
+            for (String column : usedColumns) {
+                String table = columnToTableMapping.get(column);
+                if (table != null) {
+                    qualifiedColumns.add(table + "." + column);
+                } else {
+                    qualifiedColumns.add(column);
+                }
+            }
+            query.append(String.join(", ", qualifiedColumns));
+        }
+        
+        // FROM clause avec JOINs INNER
+        query.append(" FROM ");
+        
+        if (tables.size() == 1) {
+            // Une seule table
+            query.append(tables.get(0));
+        } else {
+            // Plusieurs tables - construire les JOINs
+            String mainTable = findMainTable(tables);
+            query.append(mainTable);
+            
+            for (String table : tables) {
+                if (!table.equals(mainTable)) {
+                    // Vérifier que les deux tables ont la colonne matricule
+                    if (hasMatriculeColumn(mainTable) && hasMatriculeColumn(table)) {
+                        query.append(" INNER JOIN ").append(table);
+                        query.append(" ON ").append(mainTable).append(".matricule = ").append(table).append(".matricule");
+                    } else {
+                        LOGGER.warning("Impossible de joindre " + table + " avec " + mainTable + 
+                                     " - colonne matricule manquante");
+                    }
+                }
             }
         }
         
-        // Si pas trouvé, utiliser la première table
-        if (!tables.isEmpty()) {
-            return tables.get(0) + "." + column;
+        // WHERE clause avec colonnes qualifiées
+        if (!constraints.isEmpty()) {
+            query.append(" WHERE ");
+            List<String> qualifiedConstraints = new ArrayList<>();
+            
+            for (String constraint : constraints) {
+                String qualifiedConstraint = qualifyConstraintWithMapping(constraint, columnToTableMapping);
+                qualifiedConstraints.add(qualifiedConstraint);
+            }
+            
+            query.append(String.join(" AND ", qualifiedConstraints));
         }
         
-        return column;
+        // GROUP BY pour les graphiques
+        if ("Graphique".equals(formatSortie)) {
+            query.append(" GROUP BY ");
+            if (usedColumns.size() == 1) {
+                String column = usedColumns.get(0);
+                String table = columnToTableMapping.get(column);
+                if (table != null) {
+                    query.append(table).append(".").append(column);
+                } else {
+                    query.append(column);
+                }
+            } else {
+                List<String> groupByColumns = new ArrayList<>();
+                for (String column : usedColumns) {
+                    if (!column.equalsIgnoreCase("count")) {
+                        String table = columnToTableMapping.get(column);
+                        if (table != null) {
+                            groupByColumns.add(table + "." + column);
+                        } else {
+                            groupByColumns.add(column);
+                        }
+                    }
+                }
+                query.append(String.join(", ", groupByColumns));
+            }
+        }
+        
+        LOGGER.info("Requête construite: " + query.toString());
+        return query.toString();
     }
     
     /**
-     * Qualifie une contrainte avec le nom de table approprié
+     * NOUVELLE MÉTHODE : Qualifie une contrainte avec le mapping des tables
      */
-    private static String qualifyConstraint(String constraint, List<String> tables) {
+    private static String qualifyConstraintWithMapping(String constraint, Map<String, String> columnToTableMapping) {
         String[] parts = constraint.split("\\s+", 3);
         if (parts.length < 3) {
             return constraint;
@@ -237,20 +314,38 @@ public class MultiTableQueryManager {
         String operator = parts[1];
         String value = parts[2];
         
-        String qualifiedColumn = buildQualifiedColumnName(column, tables);
-        return qualifiedColumn + " " + operator + " " + value;
+        String table = columnToTableMapping.get(column);
+        if (table != null) {
+            return table + "." + column + " " + operator + " " + value;
+        } else {
+            LOGGER.warning("Table non trouvée pour la colonne " + column + " dans la contrainte: " + constraint);
+            return constraint;
+        }
     }
     
     /**
-     * Trouve la table principale (généralement identite_personnelle ou celle avec le plus de colonnes utilisées)
+     * NOUVELLE MÉTHODE : Vérifie si une table a la colonne matricule
+     */
+    private static boolean hasMatriculeColumn(String tableName) {
+        List<String> columns = getTableColumns(tableName);
+        return columns.contains("matricule");
+    }
+    
+    /**
+     * Extrait le nom de colonne d'une contrainte
+     */
+    private static String extractColumnFromConstraint(String constraint) {
+        String[] parts = constraint.split("\\s+");
+        return parts.length > 0 ? parts[0] : null;
+    }
+    
+    /**
+     * Trouve la table principale (généralement identite_personnelle si présente)
      */
     private static String findMainTable(List<String> tables) {
-        // Priorité à identite_personnelle si présente
         if (tables.contains("identite_personnelle")) {
             return "identite_personnelle";
         }
-        
-        // Sinon, la première table de la liste
         return tables.get(0);
     }
     
@@ -258,20 +353,19 @@ public class MultiTableQueryManager {
      * Obtient les colonnes disponibles pour un service avec préfixe de table
      */
     public static List<String> getAvailableColumnsWithTables(String service) {
-        List<String> result = new ArrayList<>();
+        buildColumnCache(service);
+        
+        Set<String> result = new LinkedHashSet<>();
         List<String> tables = ServicePermissions.getTablesForService(service);
         
         for (String table : tables) {
             List<String> columns = getTableColumns(table);
-            for (String column : columns) {
-                if (!result.contains(column)) {
-                    result.add(column);
-                }
-            }
+            result.addAll(columns);
         }
         
-        Collections.sort(result);
-        return result;
+        List<String> sortedResult = new ArrayList<>(result);
+        Collections.sort(sortedResult);
+        return sortedResult;
     }
     
     /**
@@ -279,6 +373,26 @@ public class MultiTableQueryManager {
      */
     public static void clearCache() {
         TABLE_COLUMNS_CACHE.clear();
+        COLUMN_TO_TABLE_CACHE.clear();
+        LOGGER.info("Cache multi-table effacé");
+    }
+    
+    /**
+     * NOUVELLE MÉTHODE : Debug - Affiche les informations des colonnes par table
+     */
+    public static void debugTableColumns(String service) {
+        LOGGER.info("=== DEBUG COLONNES PAR TABLE - SERVICE: " + service + " ===");
+        List<String> tables = ServicePermissions.getTablesForService(service);
+        
+        for (String table : tables) {
+            List<String> columns = getTableColumns(table);
+            LOGGER.info("Table " + table + " (" + columns.size() + " colonnes): " + String.join(", ", columns));
+        }
+        
+        LOGGER.info("=== CACHE COLONNE -> TABLE ===");
+        for (Map.Entry<String, String> entry : COLUMN_TO_TABLE_CACHE.entrySet()) {
+            LOGGER.info("Colonne '" + entry.getKey() + "' -> Table '" + entry.getValue() + "'");
+        }
     }
     
     /**
