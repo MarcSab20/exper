@@ -96,11 +96,79 @@ public class CSVProcessor {
     public static EnhancedUpdateResult processEnhancedCSVUpdateSecureWithValidation(File csvFile, String tableName, 
             ProgressCallback updateCallback) throws Exception {
 
-		LOGGER.info("=== DÉBUT DE LA MISE À JOUR AVEC VALIDATION - SANS RÉCURSION ===");
-		
-		// Directement appeler la méthode de base SANS récursion
-		return processEnhancedCSVUpdateSecureWithValidation(csvFile, tableName, updateCallback);
-	}
+        LOGGER.info("=== DÉBUT DE LA MISE À JOUR SÉCURISÉE AVEC VALIDATION ===");
+        
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        int recordsInserted = 0;
+        int recordsUpdated = 0;
+        int recordsUnchanged = 0;
+        
+        try {
+            // Étape 1 : Pré-validation des données CSV
+            LOGGER.info("Étape 1 : Pré-validation des matricules");
+            CSVValidationResult validation = preValidateCSVData(csvFile, tableName);
+            
+            if (updateCallback != null) updateCallback.onProgress(0.1);
+            
+            // Si il y a des matricules invalides, les signaler comme avertissements
+            if (!validation.isAllRecordsValid() && !validation.getInvalidMatricules().isEmpty()) {
+                for (String matricule : validation.getInvalidMatricules()) {
+                    if (!matricule.startsWith("LIGNE_INCOMPLETE_")) {
+                        warnings.add("⚠️ Matricule ignoré (non trouvé dans identite_personnelle): " + matricule);
+                    }
+                }
+                LOGGER.info("Matricules invalides détectés: " + validation.getInvalidMatricules().size());
+            }
+            
+            // Étape 2 : Créer un fichier CSV temporaire avec seulement les données valides
+            File validatedCsvFile;
+            if (validation.isAllRecordsValid()) {
+                validatedCsvFile = csvFile; // Utiliser le fichier original
+                LOGGER.info("Tous les matricules sont valides, utilisation du fichier original");
+            } else {
+                LOGGER.info("Création d'un fichier CSV temporaire avec les données valides");
+                validatedCsvFile = createValidatedCSVFile(validation);
+                LOGGER.info("Fichier CSV temporaire créé: " + validatedCsvFile.getAbsolutePath());
+            }
+            
+            if (updateCallback != null) updateCallback.onProgress(0.2);
+            
+            // Étape 3 : Traitement du CSV validé avec la méthode de base
+            LOGGER.info("Étape 3 : Traitement du CSV validé");
+            EnhancedUpdateResult result = processBasicCSVUpdate(validatedCsvFile, tableName, updateCallback);
+            
+            // Étape 4 : Fusionner les avertissements
+            errors.addAll(result.getErrors());
+            warnings.addAll(result.getWarnings());
+            recordsInserted = result.getRecordsInserted();
+            recordsUpdated = result.getRecordsUpdated();
+            recordsUnchanged = result.getRecordsUnchanged();
+            
+            // Nettoyer le fichier temporaire si nécessaire
+            if (validatedCsvFile != csvFile) {
+                try {
+                    validatedCsvFile.delete();
+                    LOGGER.info("Fichier CSV temporaire supprimé");
+                } catch (Exception e) {
+                    LOGGER.warning("Impossible de supprimer le fichier temporaire: " + e.getMessage());
+                }
+            }
+            
+            if (updateCallback != null) updateCallback.onProgress(1.0);
+            
+            LOGGER.info("=== MISE À JOUR TERMINÉE AVEC VALIDATION ===");
+            LOGGER.info("Résultat: " + recordsInserted + " insérés, " + recordsUpdated + " modifiés, " + 
+                       recordsUnchanged + " inchangés");
+            
+            return new EnhancedUpdateResult(recordsInserted, recordsUpdated, recordsUnchanged, errors, warnings);
+            
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de la mise à jour avec validation", e);
+            errors.add("Erreur critique: " + e.getMessage());
+            return new EnhancedUpdateResult(recordsInserted, recordsUpdated, recordsUnchanged, errors, warnings);
+        }
+    }
 
     /**
      * CORRECTION: Gestion des erreurs de batch
@@ -136,6 +204,161 @@ public class CSVProcessor {
 			}
 		}
 	}
+    
+    /**
+     * NOUVELLE MÉTHODE : Traitement CSV de base sans validation de clés étrangères
+     */
+    private static EnhancedUpdateResult processBasicCSVUpdate(File csvFile, String tableName, 
+            ProgressCallback updateCallback) throws Exception {
+        
+        LOGGER.info("=== DÉBUT DU TRAITEMENT CSV DE BASE ===");
+        
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        int recordsInserted = 0;
+        int recordsUpdated = 0;
+        int recordsUnchanged = 0;
+        
+        try (Connection connection = getSecureConnection()) {
+            connection.setAutoCommit(false);
+            
+            // Lire l'en-tête et détecter le séparateur
+            String separator = null;
+            List<String> headers = new ArrayList<>();
+            
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), StandardCharsets.UTF_8))) {
+                String headerLine = reader.readLine();
+                if (headerLine == null) {
+                    throw new Exception("Fichier CSV vide");
+                }
+                
+                separator = detectSeparator(headerLine);
+                
+                // Nettoyer le BOM si présent
+                if (headerLine.startsWith("\uFEFF")) {
+                    headerLine = headerLine.substring(1);
+                }
+                
+                String[] headerArray = headerLine.split(java.util.regex.Pattern.quote(separator));
+                for (String header : headerArray) {
+                    headers.add(header.trim());
+                }
+            }
+            
+            // Obtenir les colonnes de la table et construire la requête
+            Set<String> tableColumns = TableSchemaManager.getTableColumnNames(tableName);
+            List<String> validColumns = new ArrayList<>();
+            
+            for (String header : headers) {
+                if (tableColumns.contains(header)) {
+                    validColumns.add(header);
+                } else {
+                    warnings.add("Colonne ignorée (non présente dans la table): " + header);
+                }
+            }
+            
+            if (validColumns.isEmpty()) {
+                throw new Exception("Aucune colonne valide trouvée dans le CSV");
+            }
+            
+            String upsertQuery = buildReplaceQueryForValidColumns(tableName, validColumns);
+            
+            // Traitement des données par batch
+            final int BATCH_SIZE = 1000;
+            int currentLine = 0;
+            int processedLines = 0;
+            
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), StandardCharsets.UTF_8));
+                 PreparedStatement stmt = connection.prepareStatement(upsertQuery)) {
+                
+                reader.readLine(); // Ignorer l'en-tête
+                String line;
+                
+                while ((line = reader.readLine()) != null) {
+                    currentLine++;
+                    
+                    try {
+                        String[] values = line.split(java.util.regex.Pattern.quote(separator), -1);
+                        
+                        // Vérifier qu'on a assez de valeurs
+                        if (values.length < validColumns.size()) {
+                            warnings.add("Ligne " + currentLine + " ignorée: pas assez de colonnes");
+                            continue;
+                        }
+                        
+                        // Remplir les paramètres de la requête
+                        for (int i = 0; i < validColumns.size(); i++) {
+                            String value = i < values.length ? values[i].trim() : "";
+                            if (value.isEmpty()) {
+                                stmt.setNull(i + 1, Types.VARCHAR);
+                            } else {
+                                // Conversion selon le type de colonne
+                                String columnType = getColumnType(tableName, validColumns.get(i));
+                                Object convertedValue = convertValueForDatabase(value, columnType);
+                                setParameterValue(stmt, i + 1, convertedValue);
+                            }
+                        }
+                        
+                        stmt.addBatch();
+                        processedLines++;
+                        
+                        // Exécuter le batch périodiquement
+                        if (processedLines % BATCH_SIZE == 0) {
+                            try {
+                                int[] results = stmt.executeBatch();
+                                recordsInserted += countResults(results);
+                                
+                                if (updateCallback != null) {
+                                    double progress = 0.2 + (0.7 * processedLines / Math.max(1, currentLine));
+                                    updateCallback.onProgress(Math.min(progress, 0.9));
+                                }
+                            } catch (BatchUpdateException e) {
+                                handleBatchExceptionWithFKCheck(e, currentLine, errors, warnings);
+                            }
+                        }
+                        
+                    } catch (Exception e) {
+                        warnings.add("Erreur ligne " + currentLine + ": " + e.getMessage());
+                    }
+                }
+                
+                // Exécuter le dernier batch
+                if (processedLines % BATCH_SIZE != 0) {
+                    try {
+                        int[] results = stmt.executeBatch();
+                        recordsInserted += countResults(results);
+                    } catch (BatchUpdateException e) {
+                        handleBatchExceptionWithFKCheck(e, currentLine, errors, warnings);
+                    }
+                }
+            }
+            
+            connection.commit();
+            
+            LOGGER.info("=== TRAITEMENT CSV DE BASE TERMINÉ ===");
+            LOGGER.info("Lignes traitées: " + processedLines);
+            
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Erreur SQL lors du traitement CSV", e);
+            errors.add("Erreur de base de données: " + e.getMessage());
+        }
+        
+        return new EnhancedUpdateResult(recordsInserted, recordsUpdated, recordsUnchanged, errors, warnings);
+    }
+    
+    /**
+     * MÉTHODE UTILITAIRE : Compte les résultats d'un batch
+     */
+    private static int countResults(int[] results) {
+        int count = 0;
+        for (int result : results) {
+            if (result > 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     
     /**
      * NOUVELLE MÉTHODE : Détection simple du séparateur
