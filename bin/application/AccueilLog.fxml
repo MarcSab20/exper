@@ -29,7 +29,7 @@
                 <Text text="Gestion des stocks, maintenance des équipements, et coordination des approvisionnements."/>
             </TextFlow>
             
-            <!-- Indicateurs de statut rapide (optionnels) -->
+            <!-- Indicateurs de statut rapide -->
             <HBox spacing="20" alignment="CENTER_LEFT">
                 <VBox alignment="CENTER" spacing="5">
                     <Label text="Stocks Critiques" styleClass="stat-label"/>
@@ -51,10 +51,15 @@
     <TitledPane text="État des Stocks" styleClass="section-pane" collapsible="false" VBox.vgrow="ALWAYS">
         <VBox spacing="10">
             <HBox spacing="10" alignment="CENTER_RIGHT">
-                <Button fx:id="btnAjouterStock" text="➕ Ajouter" styleClass="add-button"/>
-                <Button fx:id="btnMajStocks" text="✏️ Mettre à jour" styleClass="action-button"/>
-                <Button fx:id="btnValiderStocks" text="✅ Valider" styleClass="validate-button"/>
-            </HBox>
+			    <Button fx:id="btnAjouterStock" text="➕ Ajouter" styleClass="add-button"/>
+			    <Button fx:id="btnMajStocks" text="✏️ Mettre à jour" styleClass="action-button"/>
+			    <Button fx:id="btnValiderStocks" text="✅ Valider" styleClass="validate-button"/>
+			    <Separator orientation="VERTICAL"/>
+			    <Button fx:id="btnApprovisionnement" text="📦 Approvisionner" styleClass="supply-button"/>
+			    <Button fx:id="btnRetrait" text="📤 Retirer" styleClass="withdraw-button"/>
+			    <Button fx:id="btnFicheEquipement" text="📄 Fiche" styleClass="card-button"/>
+			    <Button fx:id="btnSupprimerStock" text="🗑️ Supprimer" styleClass="delete-button"/>
+			</HBox>
             
             <!-- Légende des statuts -->
             <HBox spacing="15" alignment="CENTER_LEFT">
@@ -81,11 +86,11 @@
                 <TableView fx:id="stocksTable" VBox.vgrow="ALWAYS">
                     <columns>
                         <TableColumn text="Statut" fx:id="statutStockColumn" minWidth="60" maxWidth="80"/>
-                        <TableColumn text="Désignation" fx:id="designationStockColumn" minWidth="150"/>
+                        <TableColumn text="Désignation" fx:id="designationStockColumn" minWidth="200"/>
                         <TableColumn text="Quantité" fx:id="quantiteColumn" minWidth="80" maxWidth="100"/>
-                        <TableColumn text="État" fx:id="etatColumn" minWidth="100"/>
-                        <TableColumn text="Description" fx:id="descriptionStockColumn" minWidth="150"/>
+                        <TableColumn text="État" fx:id="etatColumn" minWidth="120"/>
                         <TableColumn text="Valeur critique" fx:id="valeurCritiqueColumn" minWidth="100" maxWidth="120"/>
+                        <TableColumn text="Date création" fx:id="dateCreationColumn" minWidth="140" maxWidth="160"/>
                     </columns>
                     <placeholder>
                         <Label text="Aucune donnée disponible"/>
@@ -105,6 +110,8 @@
                 <Button fx:id="btnAjouterMaintenance" text="➕ Ajouter" styleClass="add-button"/>
                 <Button fx:id="btnMajMaintenance" text="✏️ Mettre à jour" styleClass="action-button"/>
                 <Button fx:id="btnValiderMaintenance" text="✅ Valider" styleClass="validate-button"/>
+                <Separator orientation="VERTICAL"/>
+                <Button fx:id="btnSupprimerMaintenance" text="🗑️ Supprimer" styleClass="delete-button"/>
             </HBox>
             
             <!-- Légende des statuts maintenance -->

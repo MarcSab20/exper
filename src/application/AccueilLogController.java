@@ -12,9 +12,7 @@ import javafx.collections.ObservableList;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
 import javafx.geometry.Insets;
-import javafx.scene.paint.Color;
 import javafx.util.Callback;
 import javafx.scene.control.cell.CheckBoxTableCell;
 import javafx.stage.Stage;
@@ -29,6 +27,7 @@ import java.io.FileOutputStream;
 import java.net.URL;
 import java.sql.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ResourceBundle;
@@ -51,7 +50,12 @@ import com.itextpdf.text.BaseColor;
 import com.itextpdf.text.Phrase;
 
 /**
- * Contrôleur pour l'écran de gestion logistique qui gère les stocks et la maintenance
+ * Contrôleur amélioré pour l'écran de gestion logistique
+ * Nouvelles fonctionnalités:
+ * - Gestion des mouvements de stock (approvisionnement/retrait)
+ * - Fiche détaillée d'équipement
+ * - Suppression sécurisée
+ * - Historique complet des opérations
  */
 public class AccueilLogController implements Initializable {
     // Logger pour le traçage des erreurs et informations
@@ -75,6 +79,7 @@ public class AccueilLogController implements Initializable {
     
     // Format de date standard
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     
     // Éléments de l'interface définis dans le FXML
     @FXML private TableView<Stock> stocksTable;
@@ -82,9 +87,16 @@ public class AccueilLogController implements Initializable {
     @FXML private TableColumn<Stock, String> designationStockColumn;
     @FXML private TableColumn<Stock, Integer> quantiteColumn;
     @FXML private TableColumn<Stock, String> etatColumn;
-    @FXML private TableColumn<Stock, String> descriptionStockColumn;
     @FXML private TableColumn<Stock, Integer> valeurCritiqueColumn;
+    @FXML private TableColumn<Stock, String> dateCreationColumn; // Nouvelle colonne
+    
+    // Boutons pour les stocks
     @FXML private Button btnAjouterStock;
+    @FXML private Button btnMajStocks;
+    @FXML private Button btnValiderStocks;
+    @FXML private Button btnApprovisionnement; // Nouveau
+    @FXML private Button btnRetrait; // Nouveau
+    @FXML private Button btnFicheEquipement; // Nouveau
     
     @FXML private TableView<Maintenance> maintenanceTable;
     @FXML private TableColumn<Maintenance, String> statutMaintenanceColumn;
@@ -93,16 +105,17 @@ public class AccueilLogController implements Initializable {
     @FXML private TableColumn<Maintenance, String> typeMaintenanceColumn;
     @FXML private TableColumn<Maintenance, String> descriptionMaintenanceColumn;
     @FXML private TableColumn<Maintenance, Boolean> effectueeColumn;
+    
+    // Boutons pour les maintenances
     @FXML private Button btnAjouterMaintenance;
+    @FXML private Button btnMajMaintenance;
+    @FXML private Button btnValiderMaintenance;
+    @FXML private Button btnSupprimerMaintenance; 
+    @FXML private Button btnSupprimerStock;
+    
     @FXML private Label stocksCritiquesCount;
     @FXML private Label maintenancesUrgentesCount;
     @FXML private Label totalEquipementsCount;
-    
-    @FXML private Button btnMajStocks;
-    @FXML private Button btnMajMaintenance;
-    @FXML private Button btnValiderStocks;
-    @FXML private Button btnValiderMaintenance;
-    
     
     // Collections de données
     private final ObservableList<Stock> stocks = FXCollections.observableArrayList();
@@ -124,6 +137,9 @@ public class AccueilLogController implements Initializable {
             // Établir la connexion à la base de données
             connectToDatabase();
             
+            // Initialiser les tables nécessaires
+            StockMovementManager.initializeTables(connection);
+            
             // Configurer les tableaux et charger les données
             initializeStocksTable();
             initializeMaintenanceTable();
@@ -131,8 +147,6 @@ public class AccueilLogController implements Initializable {
             
             // Initialiser les boutons
             setupButtons();
-            btnAjouterStock.setDisable(true);
-            btnAjouterMaintenance.setDisable(true);
             
             // Mettre à jour les statuts des maintenances
             updateAllMaintenanceStatuses();
@@ -140,7 +154,7 @@ public class AccueilLogController implements Initializable {
             // Rafraîchir les tables
             refreshTables();
             
-         // AJOUT : Mettre à jour les indicateurs de statut
+            // Mettre à jour les indicateurs de statut
             updateStatusIndicators();
             
             // Vérifier les alertes critiques au démarrage
@@ -172,7 +186,7 @@ public class AccueilLogController implements Initializable {
      * Configure les boutons de l'interface
      */
     private void setupButtons() {
-    	 // Initialisation des boutons
+        // Initialisation des boutons
         btnValiderStocks.setVisible(false);
         btnValiderMaintenance.setVisible(false);
         
@@ -187,6 +201,378 @@ public class AccueilLogController implements Initializable {
         // Configuration des boutons de validation
         btnValiderStocks.setOnAction(e -> saveStocksToDatabase());
         btnValiderMaintenance.setOnAction(e -> saveMaintenanceToDatabase());
+        
+        // NOUVEAUX BOUTONS
+        btnApprovisionnement.setOnAction(e -> effectuerMouvement("APPROVISIONNEMENT"));
+        btnRetrait.setOnAction(e -> effectuerMouvement("RETRAIT"));
+        btnFicheEquipement.setOnAction(e -> afficherFicheEquipement());
+        btnSupprimerMaintenance.setOnAction(e -> supprimerMaintenanceSelectionnee());
+        btnSupprimerStock.setOnAction(e -> supprimerStockSelectionne());
+        btnSupprimerStock.setDisable(true);
+        
+        // Désactiver les nouveaux boutons par défaut
+        btnApprovisionnement.setDisable(true);
+        btnRetrait.setDisable(true);
+        btnFicheEquipement.setDisable(true);
+        btnAjouterStock.setDisable(true);
+        btnAjouterMaintenance.setDisable(true);
+    }
+    
+    /**
+     * NOUVELLE FONCTIONNALITÉ: Effectue un mouvement de stock (approvisionnement ou retrait)
+     */
+    private void effectuerMouvement(String typeMouvement) {
+        Stock stockSelectionne = stocksTable.getSelectionModel().getSelectedItem();
+        if (stockSelectionne == null) {
+            showAlert(Alert.AlertType.WARNING, "Sélection requise", 
+                     "Veuillez sélectionner un équipement", null);
+            return;
+        }
+        
+        showMovementDialog(stockSelectionne, typeMouvement);
+    }
+    
+    /**
+     * NOUVELLE FONCTIONNALITÉ: Affiche la boîte de dialogue pour un mouvement de stock
+     */
+    private void showMovementDialog(Stock stock, String typeMouvement) {
+        Dialog<Boolean> dialog = new Dialog<>();
+        dialog.setTitle(typeMouvement.equals("APPROVISIONNEMENT") ? "Approvisionnement" : "Retrait");
+        dialog.setHeaderText("Mouvement de stock pour : " + stock.getDesignation());
+        
+        // Configurer les boutons
+        ButtonType executeButtonType = new ButtonType("Exécuter", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(executeButtonType, ButtonType.CANCEL);
+        
+        // Créer les champs du formulaire
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+        
+        Label stockInfoLabel = new Label(String.format("Stock actuel: %d unités | Seuil critique: %d", 
+                                                      stock.getQuantite(), stock.getValeurCritique()));
+        stockInfoLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #2c3e50;");
+        
+        Spinner<Integer> quantiteSpinner = new Spinner<>(1, 
+                                                        typeMouvement.equals("RETRAIT") ? stock.getQuantite() : 9999, 
+                                                        1);
+        quantiteSpinner.setEditable(true);
+        quantiteSpinner.setPrefWidth(120);
+        
+        TextArea descriptionArea = new TextArea();
+        descriptionArea.setPromptText("Description du mouvement...");
+        descriptionArea.setPrefRowCount(3);
+        descriptionArea.setPrefWidth(300);
+        
+        // Ajouter une vérification en temps réel pour les retraits
+        if (typeMouvement.equals("RETRAIT")) {
+            Label warningLabel = new Label("");
+            warningLabel.setStyle("-fx-text-fill: red; -fx-font-size: 12px;");
+            
+            quantiteSpinner.valueProperty().addListener((obs, oldVal, newVal) -> {
+                if (newVal > stock.getQuantite()) {
+                    warningLabel.setText("⚠️ Quantité insuffisante en stock!");
+                    dialog.getDialogPane().lookupButton(executeButtonType).setDisable(true);
+                } else {
+                    int nouvelleQuantite = stock.getQuantite() - newVal;
+                    if (nouvelleQuantite < stock.getValeurCritique()) {
+                        warningLabel.setText("⚠️ Cette opération passera le stock sous le seuil critique!");
+                        warningLabel.setStyle("-fx-text-fill: orange; -fx-font-size: 12px;");
+                    } else {
+                        warningLabel.setText("");
+                    }
+                    dialog.getDialogPane().lookupButton(executeButtonType).setDisable(false);
+                }
+            });
+            
+            grid.add(warningLabel, 1, 3);
+        }
+        
+        grid.add(stockInfoLabel, 0, 0, 2, 1);
+        grid.add(new Label("Quantité:"), 0, 1);
+        grid.add(quantiteSpinner, 1, 1);
+        grid.add(new Label("Description:"), 0, 2);
+        grid.add(descriptionArea, 1, 2);
+        
+        dialog.getDialogPane().setContent(grid);
+        
+        // Conversion du résultat
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == executeButtonType) {
+                int quantite = quantiteSpinner.getValue();
+                String description = descriptionArea.getText().trim();
+                
+                if (description.isEmpty()) {
+                    showAlert(Alert.AlertType.ERROR, "Description requise", 
+                             "Veuillez saisir une description pour ce mouvement", null);
+                    return false;
+                }
+                
+                // Exécuter le mouvement
+                boolean success = StockMovementManager.effectuerMouvement(
+                    connection, stock.getId(), typeMouvement, quantite, description);
+                
+                if (success) {
+                    // Recharger les données
+                    loadStocksFromDatabase();
+                    stocksTable.refresh();
+                    updateStatusIndicators();
+                    
+                    showAlert(Alert.AlertType.INFORMATION, "Mouvement effectué", 
+                             String.format("Mouvement %s de %d unités effectué avec succès", 
+                                          typeMouvement.toLowerCase(), quantite), null);
+                    return true;
+                } else {
+                    showAlert(Alert.AlertType.ERROR, "Erreur", 
+                             "Erreur lors de l'exécution du mouvement", null);
+                    return false;
+                }
+            }
+            return false;
+        });
+        
+        dialog.showAndWait();
+    }
+    
+    /**
+     * NOUVELLE FONCTIONNALITÉ: Affiche la fiche détaillée d'un équipement
+     */
+    private void afficherFicheEquipement() {
+        Stock stockSelectionne = stocksTable.getSelectionModel().getSelectedItem();
+        if (stockSelectionne == null) {
+            showAlert(Alert.AlertType.WARNING, "Sélection requise", 
+                     "Veuillez sélectionner un équipement", null);
+            return;
+        }
+        
+        // Récupérer la fiche complète
+        EquipmentCard fiche = StockMovementManager.getEquipmentCard(connection, stockSelectionne);
+        
+        showEquipmentCardDialog(fiche);
+    }
+    
+    /**
+     * NOUVELLE FONCTIONNALITÉ: Affiche la boîte de dialogue avec la fiche d'équipement
+     */
+    private void showEquipmentCardDialog(EquipmentCard fiche) {
+        Alert dialog = new Alert(Alert.AlertType.INFORMATION);
+        dialog.setTitle("Fiche d'équipement");
+        dialog.setHeaderText("Fiche complète : " + fiche.getStock().getDesignation());
+        
+        // Créer le contenu détaillé
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(10));
+        
+        // Informations générales
+        Label infoGenerales = new Label("INFORMATIONS GÉNÉRALES");
+        infoGenerales.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: #2c3e50;");
+        
+        GridPane infoGrid = new GridPane();
+        infoGrid.setHgap(10);
+        infoGrid.setVgap(5);
+        infoGrid.setPadding(new Insets(5, 0, 10, 10));
+        
+        infoGrid.add(new Label("Date de création:"), 0, 0);
+        infoGrid.add(new Label(fiche.getFormattedDateCreation()), 1, 0);
+        infoGrid.add(new Label("Quantité initiale:"), 0, 1);
+        infoGrid.add(new Label(String.valueOf(fiche.getQuantiteInitiale())), 1, 1);
+        infoGrid.add(new Label("Quantité actuelle:"), 0, 2);
+        infoGrid.add(new Label(String.valueOf(fiche.getStock().getQuantite())), 1, 2);
+        infoGrid.add(new Label("État:"), 0, 3);
+        infoGrid.add(new Label(fiche.getStock().getEtat()), 1, 3);
+        infoGrid.add(new Label("Seuil critique:"), 0, 4);
+        infoGrid.add(new Label(String.valueOf(fiche.getStock().getValeurCritique())), 1, 4);
+        
+        // Style des labels
+        for (int i = 0; i < 5; i++) {
+            Label label = (Label) infoGrid.getChildren().get(i * 2);
+            label.setStyle("-fx-font-weight: bold; -fx-text-fill: #495057;");
+        }
+        
+        // Résumé des mouvements
+        Label resumeMouvements = new Label("RÉSUMÉ DES MOUVEMENTS");
+        resumeMouvements.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: #2c3e50;");
+        
+        GridPane resumeGrid = new GridPane();
+        resumeGrid.setHgap(10);
+        resumeGrid.setVgap(5);
+        resumeGrid.setPadding(new Insets(5, 0, 10, 10));
+        
+        resumeGrid.add(new Label("Nombre de mouvements:"), 0, 0);
+        resumeGrid.add(new Label(String.valueOf(fiche.getNombreMouvements())), 1, 0);
+        resumeGrid.add(new Label("Total approvisionnements:"), 0, 1);
+        resumeGrid.add(new Label("+" + fiche.getTotalApprovisionements()), 1, 1);
+        resumeGrid.add(new Label("Total retraits:"), 0, 2);
+        resumeGrid.add(new Label("-" + fiche.getTotalRetraits()), 1, 2);
+        resumeGrid.add(new Label("Quantité calculée:"), 0, 3);
+        resumeGrid.add(new Label(String.valueOf(fiche.getQuantiteCalculee())), 1, 3);
+        
+        // Style des labels du résumé
+        for (int i = 0; i < 4; i++) {
+            Label label = (Label) resumeGrid.getChildren().get(i * 2);
+            label.setStyle("-fx-font-weight: bold; -fx-text-fill: #495057;");
+        }
+        
+        // Avertissement si discordance
+        if (fiche.hasDiscrepancy()) {
+            Label warning = new Label("⚠️ ATTENTION: Discordance détectée entre quantité calculée et quantité enregistrée!");
+            warning.setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
+            content.getChildren().add(warning);
+        }
+        
+        // Historique des mouvements
+        if (!fiche.getMouvements().isEmpty()) {
+            Label historiqueLabel = new Label("HISTORIQUE DES MOUVEMENTS (derniers 10)");
+            historiqueLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: #2c3e50;");
+            
+            VBox historiqueBox = new VBox(3);
+            historiqueBox.setPadding(new Insets(5, 0, 0, 10));
+            
+            List<StockMovement> mouvements = fiche.getMouvements();
+            int maxMouvements = Math.min(10, mouvements.size());
+            
+            for (int i = 0; i < maxMouvements; i++) {
+                StockMovement mouvement = mouvements.get(i);
+                Label mouvementLabel = new Label(String.format("%s - %s %s (%d → %d) - %s",
+                    mouvement.getFormattedDate(),
+                    mouvement.getTypeIcon(),
+                    mouvement.getQuantiteWithSign(),
+                    mouvement.getQuantiteAvant(),
+                    mouvement.getQuantiteApres(),
+                    mouvement.getDescription()));
+                mouvementLabel.setStyle("-fx-font-family: 'Consolas', monospace; -fx-font-size: 11px;");
+                historiqueBox.getChildren().add(mouvementLabel);
+            }
+            
+            if (mouvements.size() > 10) {
+                Label moreLabel = new Label("... et " + (mouvements.size() - 10) + " autres mouvements");
+                moreLabel.setStyle("-fx-font-style: italic; -fx-text-fill: #6c757d;");
+                historiqueBox.getChildren().add(moreLabel);
+            }
+            
+            content.getChildren().addAll(resumeMouvements, resumeGrid, historiqueLabel, historiqueBox);
+        }
+        
+        content.getChildren().addAll(infoGenerales, infoGrid);
+        
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefHeight(400);
+        scrollPane.setPrefWidth(500);
+        
+        dialog.getDialogPane().setContent(scrollPane);
+        dialog.getDialogPane().setPrefWidth(550);
+        
+        // Bouton pour exporter la fiche
+        ButtonType exportButton = new ButtonType("Exporter PDF", ButtonBar.ButtonData.LEFT);
+        dialog.getButtonTypes().add(exportButton);
+        
+        Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isPresent() && result.get() == exportButton) {
+            exporterFichePDF(fiche);
+        }
+    }
+    
+    /**
+     * NOUVELLE FONCTIONNALITÉ: Exporte la fiche d'équipement en PDF
+     */
+    private void exporterFichePDF(EquipmentCard fiche) {
+        try {
+            Document document = new Document();
+            String fileName = "Fiche_" + fiche.getStock().getDesignation().replaceAll("[^a-zA-Z0-9]", "_") + 
+                             "_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf";
+            File file = new File(fileName);
+            PdfWriter.getInstance(document, new FileOutputStream(file));
+            
+            document.open();
+            
+            // Titre
+            Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
+            Paragraph title = new Paragraph("FICHE D'ÉQUIPEMENT", titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
+            document.add(title);
+            
+            Paragraph subtitle = new Paragraph(fiche.getStock().getDesignation(), titleFont);
+            subtitle.setAlignment(Element.ALIGN_CENTER);
+            document.add(subtitle);
+            
+            document.add(new Paragraph(" "));
+            
+            // Contenu détaillé
+            document.add(new Paragraph(fiche.generateSummary()));
+            
+            document.close();
+            
+            showAlert(Alert.AlertType.INFORMATION, "Export réussi", 
+                     "Fiche d'équipement exportée avec succès", 
+                     "Fichier: " + file.getAbsolutePath());
+            
+            HistoryManager.logCreation("Accueil Logistique", "Export fiche équipement: " + fiche.getStock().getDesignation());
+            
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de l'export de la fiche", e);
+            showAlert(Alert.AlertType.ERROR, "Erreur d'export", 
+                     "Impossible d'exporter la fiche", e.getMessage());
+        }
+    }
+    
+    /**
+     * NOUVELLE FONCTIONNALITÉ: Supprime la maintenance sélectionnée
+     */
+    private void supprimerMaintenanceSelectionnee() {
+        Maintenance maintenanceSelectionnee = maintenanceTable.getSelectionModel().getSelectedItem();
+        if (maintenanceSelectionnee == null) {
+            showAlert(Alert.AlertType.WARNING, "Sélection requise", 
+                     "Veuillez sélectionner une maintenance à supprimer", null);
+            return;
+        }
+        
+        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.setTitle("Confirmation de suppression");
+        confirmation.setHeaderText("Supprimer une maintenance");
+        confirmation.setContentText("Êtes-vous sûr de vouloir supprimer cette maintenance ?\n\n" +
+                                   "Désignation: " + maintenanceSelectionnee.getDesignation() + "\n" +
+                                   "Date: " + maintenanceSelectionnee.getDate() + "\n" +
+                                   "Type: " + maintenanceSelectionnee.getType());
+        
+        Optional<ButtonType> result = confirmation.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            if (supprimerMaintenanceFromDatabase(maintenanceSelectionnee)) {
+                maintenances.remove(maintenanceSelectionnee);
+                maintenanceTable.refresh();
+                updateStatusIndicators();
+                
+                showAlert(Alert.AlertType.INFORMATION, "Suppression réussie", 
+                         "La maintenance a été supprimée avec succès", null);
+                         
+                // Enregistrer dans l'historique
+                String details = String.format("Suppression maintenance: %s (Date: %s, Type: %s)", 
+                                              maintenanceSelectionnee.getDesignation(),
+                                              maintenanceSelectionnee.getDate(),
+                                              maintenanceSelectionnee.getType());
+                HistoryManager.logDeletion("Maintenances", details);
+            } else {
+                showAlert(Alert.AlertType.ERROR, "Erreur de suppression", 
+                         "Impossible de supprimer la maintenance", null);
+            }
+        }
+    }
+    
+    /**
+     * Supprime une maintenance de la base de données
+     */
+    private boolean supprimerMaintenanceFromDatabase(Maintenance maintenance) {
+        String sql = "DELETE FROM maintenances WHERE id = ?";
+        
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setInt(1, maintenance.getId());
+            int rowsAffected = stmt.executeUpdate();
+            return rowsAffected > 0;
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Erreur lors de la suppression de la maintenance", e);
+            return false;
+        }
     }
     
     /**
@@ -207,7 +593,7 @@ public class AccueilLogController implements Initializable {
     }
 
     /**
-     * Configure le tableau des stocks
+     * Configure le tableau des stocks avec la nouvelle colonne date de création
      */
     private void initializeStocksTable() {
         // Configuration des colonnes du tableau des stocks
@@ -215,8 +601,14 @@ public class AccueilLogController implements Initializable {
         designationStockColumn.setCellValueFactory(new PropertyValueFactory<>("designation"));
         quantiteColumn.setCellValueFactory(new PropertyValueFactory<>("quantite"));
         etatColumn.setCellValueFactory(new PropertyValueFactory<>("etat"));
-        descriptionStockColumn.setCellValueFactory(new PropertyValueFactory<>("description"));
         valeurCritiqueColumn.setCellValueFactory(new PropertyValueFactory<>("valeurCritique"));
+        // NOUVELLE COLONNE: Date de création
+        dateCreationColumn.setCellValueFactory(cellData -> {
+            Stock stock = cellData.getValue();
+            LocalDateTime dateCreation = stock.getDateCreation();
+            return new SimpleStringProperty(dateCreation != null ? 
+                                          dateCreation.format(DATETIME_FORMATTER) : "N/A");
+        });
         
         // Style pour la colonne statut
         configureStatutStockColumn();
@@ -226,6 +618,15 @@ public class AccueilLogController implements Initializable {
         
         // Configuration du menu contextuel et des actions sur les lignes
         configureStockTableRowFactory();
+        
+        // NOUVELLE FONCTIONNALITÉ: Gérer la sélection pour activer/désactiver les boutons
+        stocksTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
+            boolean hasSelection = newSelection != null;
+            btnApprovisionnement.setDisable(!hasSelection);
+            btnRetrait.setDisable(!hasSelection);
+            btnFicheEquipement.setDisable(!hasSelection);
+            btnSupprimerStock.setDisable(!hasSelection || !editModeStocks); // NOUVEAU
+        });
     }
     
     /**
@@ -280,14 +681,14 @@ public class AccueilLogController implements Initializable {
                 }
             });
             
-            // Menu contextuel
+            // Menu contextuel AMÉLIORÉ
             ContextMenu contextMenu = createStockContextMenu(row);
             
-            // N'afficher le menu contextuel qu'en mode édition
+            // N'afficher le menu contextuel qu'en mode édition ou pour certaines actions
             row.contextMenuProperty().bind(
                 javafx.beans.binding.Bindings.when(
                     javafx.beans.binding.Bindings.createBooleanBinding(
-                        () -> editModeStocks && !row.isEmpty(), 
+                        () -> !row.isEmpty(), 
                         row.emptyProperty()
                     )
                 )
@@ -300,48 +701,126 @@ public class AccueilLogController implements Initializable {
     }
     
     /**
-     * Crée le menu contextuel pour une ligne du tableau des stocks
+     * Crée le menu contextuel AMÉLIORÉ pour une ligne du tableau des stocks
      */
     private ContextMenu createStockContextMenu(TableRow<Stock> row) {
         ContextMenu contextMenu = new ContextMenu();
         
-        MenuItem editItem = new MenuItem("Modifier");
-        MenuItem deleteItem = new MenuItem("Supprimer");
+        // Actions disponibles selon le mode
+        if (editModeStocks) {
+            MenuItem editItem = new MenuItem("Modifier");
+            MenuItem deleteItem = new MenuItem("Supprimer");
+            
+            editItem.setOnAction(event -> {
+                if (!row.isEmpty()) {
+                    showStockEditDialog(row.getItem());
+                }
+            });
+            
+            deleteItem.setOnAction(event -> {
+                if (!row.isEmpty()) {
+                    supprimerStockAvecConfirmation(row.getItem());
+                }
+            });
+            
+            contextMenu.getItems().addAll(editItem, deleteItem);
+        }
         
-        editItem.setOnAction(event -> {
-            if (!row.isEmpty() && editModeStocks) {
-                showStockEditDialog(row.getItem());
+        // Actions toujours disponibles
+        MenuItem ficheItem = new MenuItem("📄 Voir la fiche");
+        MenuItem approvisionnerItem = new MenuItem("📦 Approvisionner");
+        MenuItem retirerItem = new MenuItem("📤 Retirer");
+        
+        ficheItem.setOnAction(event -> {
+            if (!row.isEmpty()) {
+                stocksTable.getSelectionModel().select(row.getItem());
+                afficherFicheEquipement();
             }
         });
         
-        deleteItem.setOnAction(event -> {
-            if (!row.isEmpty() && editModeStocks) {
-                deleteStock(row.getItem());
+        approvisionnerItem.setOnAction(event -> {
+            if (!row.isEmpty()) {
+                showMovementDialog(row.getItem(), "APPROVISIONNEMENT");
             }
         });
         
-        contextMenu.getItems().addAll(editItem, deleteItem);
+        retirerItem.setOnAction(event -> {
+            if (!row.isEmpty()) {
+                showMovementDialog(row.getItem(), "RETRAIT");
+            }
+        });
+        
+        if (editModeStocks) {
+            contextMenu.getItems().add(new SeparatorMenuItem());
+        }
+        contextMenu.getItems().addAll(ficheItem, approvisionnerItem, retirerItem);
         
         return contextMenu;
     }
     
     /**
-     * Supprime un stock du tableau
+     * NOUVELLE FONCTIONNALITÉ: Supprime un stock avec confirmation et gestion complète
      */
-    private void deleteStock(Stock stock) {
-        if (stock != null) {
-            Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
-            confirmation.setTitle("Confirmation de suppression");
-            confirmation.setHeaderText("Supprimer un stock");
-            confirmation.setContentText("Êtes-vous sûr de vouloir supprimer ce stock : " + stock.getDesignation() + " ?");
+    private void supprimerStockAvecConfirmation(Stock stock) {
+        if (stock == null) return;
+        
+        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.setTitle("Confirmation de suppression");
+        confirmation.setHeaderText("Supprimer un équipement");
+        confirmation.setContentText("Êtes-vous sûr de vouloir supprimer cet équipement ?\n\n" +
+                                   "Désignation: " + stock.getDesignation() + "\n" +
+                                   "Quantité actuelle: " + stock.getQuantite() + "\n" +
+                                   "État: " + stock.getEtat() + "\n\n" +
+                                   "⚠️ Cette action supprimera également tout l'historique des mouvements associé.");
+        
+        Optional<ButtonType> result = confirmation.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            boolean success = StockMovementManager.supprimerStock(connection, stock.getId(), stock.getDesignation());
             
-            Optional<ButtonType> result = confirmation.showAndWait();
-            if (result.isPresent() && result.get() == ButtonType.OK) {
+            if (success) {
                 stocks.remove(stock);
                 stocksTable.refresh();
                 updateStatusIndicators();
-                LOGGER.info("Stock supprimé: " + stock.getDesignation());
+                
+                showAlert(Alert.AlertType.INFORMATION, "Suppression réussie", 
+                         "L'équipement et son historique ont été supprimés avec succès", null);
+            } else {
+                showAlert(Alert.AlertType.ERROR, "Erreur de suppression", 
+                         "Impossible de supprimer l'équipement", null);
             }
+        }
+    }
+    
+    /**
+     * Met à jour les indicateurs de statut rapide
+     */
+    private void updateStatusIndicators() {
+        // Compter les stocks critiques et faibles
+        int stocksCritiques = 0;
+        for (Stock stock : stocks) {
+            if (STATUT_VIOLET.equals(stock.getStatut()) || STATUT_ROUGE.equals(stock.getStatut())) {
+                stocksCritiques++;
+            }
+        }
+        
+        // Compter les maintenances urgentes
+        int maintenancesUrgentes = 0;
+        for (Maintenance maintenance : maintenances) {
+            if (!maintenance.isEffectuee() && 
+                (STATUT_VIOLET.equals(maintenance.getStatut()) || STATUT_ROUGE.equals(maintenance.getStatut()))) {
+                maintenancesUrgentes++;
+            }
+        }
+        
+        // Mettre à jour l'interface
+        if (stocksCritiquesCount != null) {
+            stocksCritiquesCount.setText(String.valueOf(stocksCritiques));
+        }
+        if (maintenancesUrgentesCount != null) {
+            maintenancesUrgentesCount.setText(String.valueOf(maintenancesUrgentes));
+        }
+        if (totalEquipementsCount != null) {
+            totalEquipementsCount.setText(String.valueOf(stocks.size()));
         }
     }
 
@@ -410,308 +889,6 @@ public class AccueilLogController implements Initializable {
             }
         });
     }
-    
-    /**
-     * Met à jour les indicateurs de statut rapide
-     */
-    private void updateStatusIndicators() {
-        // Compter les stocks critiques et faibles
-        int stocksCritiques = 0;
-        for (Stock stock : stocks) {
-            if (STATUT_VIOLET.equals(stock.getStatut()) || STATUT_ROUGE.equals(stock.getStatut())) {
-                stocksCritiques++;
-            }
-        }
-        
-        // Compter les maintenances urgentes
-        int maintenancesUrgentes = 0;
-        for (Maintenance maintenance : maintenances) {
-            if (!maintenance.isEffectuee() && 
-                (STATUT_VIOLET.equals(maintenance.getStatut()) || STATUT_ROUGE.equals(maintenance.getStatut()))) {
-                maintenancesUrgentes++;
-            }
-        }
-        
-        // Mettre à jour l'interface
-        if (stocksCritiquesCount != null) {
-            stocksCritiquesCount.setText(String.valueOf(stocksCritiques));
-        }
-        if (maintenancesUrgentesCount != null) {
-            maintenancesUrgentesCount.setText(String.valueOf(maintenancesUrgentes));
-        }
-        if (totalEquipementsCount != null) {
-            totalEquipementsCount.setText(String.valueOf(stocks.size()));
-        }
-    }
-
-    /**
-     * Exporte les stocks en PDF
-     */
-    @FXML
-    private void exporterStocksEnPDF() {
-        try {
-            Document document = new Document();
-            File file = new File("Stocks_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf");
-            PdfWriter.getInstance(document, new FileOutputStream(file));
-            
-            document.open();
-            
-            // Titre
-            Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
-            Paragraph title = new Paragraph("État des Stocks - Service Logistique", titleFont);
-            title.setAlignment(Element.ALIGN_CENTER);
-            document.add(title);
-            
-            Paragraph date = new Paragraph("Date: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
-            date.setAlignment(Element.ALIGN_CENTER);
-            document.add(date);
-            document.add(new Paragraph(" "));
-            
-            // Statistiques résumées
-            Font sectionFont = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD);
-            document.add(new Paragraph("Résumé", sectionFont));
-            
-            Map<String, Integer> stats = new HashMap<>();
-            stats.put("Total", stocks.size());
-            stats.put("Normaux", 0);
-            stats.put("Attention", 0);
-            stats.put("Faibles", 0);
-            stats.put("Critiques", 0);
-            
-            for (Stock stock : stocks) {
-                switch (stock.getStatut()) {
-                    case STATUT_VERT:
-                        stats.put("Normaux", stats.get("Normaux") + 1);
-                        break;
-                    case STATUT_ORANGE:
-                        stats.put("Attention", stats.get("Attention") + 1);
-                        break;
-                    case STATUT_ROUGE:
-                        stats.put("Faibles", stats.get("Faibles") + 1);
-                        break;
-                    case STATUT_VIOLET:
-                        stats.put("Critiques", stats.get("Critiques") + 1);
-                        break;
-                }
-            }
-            
-            for (Map.Entry<String, Integer> entry : stats.entrySet()) {
-                document.add(new Paragraph(entry.getKey() + ": " + entry.getValue()));
-            }
-            document.add(new Paragraph(" "));
-            
-            // Tableau détaillé
-            document.add(new Paragraph("Détail des Stocks", sectionFont));
-            document.add(new Paragraph(" "));
-            
-            PdfPTable table = new PdfPTable(6);
-            table.setWidthPercentage(100);
-            
-            // En-têtes
-            String[] headers = {"Statut", "Désignation", "Quantité", "État", "Description", "Seuil Critique"};
-            for (String header : headers) {
-                PdfPCell cell = new PdfPCell(new Phrase(header));
-                cell.setBackgroundColor(BaseColor.LIGHT_GRAY);
-                cell.setHorizontalAlignment(Element.ALIGN_CENTER);
-                table.addCell(cell);
-            }
-            
-            // Données
-            for (Stock stock : stocks) {
-                // Statut avec couleur
-                PdfPCell statutCell = new PdfPCell(new Phrase(getStatutText(stock.getStatut())));
-                switch (stock.getStatut()) {
-                    case STATUT_VERT:
-                        statutCell.setBackgroundColor(BaseColor.GREEN);
-                        break;
-                    case STATUT_ORANGE:
-                        statutCell.setBackgroundColor(BaseColor.ORANGE);
-                        break;
-                    case STATUT_ROUGE:
-                        statutCell.setBackgroundColor(BaseColor.RED);
-                        break;
-                    case STATUT_VIOLET:
-                        statutCell.setBackgroundColor(BaseColor.MAGENTA);
-                        break;
-                }
-                table.addCell(statutCell);
-                
-                table.addCell(stock.getDesignation());
-                table.addCell(String.valueOf(stock.getQuantite()));
-                table.addCell(stock.getEtat());
-                table.addCell(stock.getDescription());
-                table.addCell(String.valueOf(stock.getValeurCritique()));
-            }
-            
-            document.add(table);
-            document.close();
-            
-            showAlert(Alert.AlertType.INFORMATION, "Export réussi", 
-                     "Export des stocks réalisé avec succès", 
-                     "Fichier: " + file.getAbsolutePath());
-            
-            HistoryManager.logCreation("Accueil Logistique", "Export PDF des stocks");
-            
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Erreur lors de l'export des stocks", e);
-            showAlert(Alert.AlertType.ERROR, "Erreur d'export", 
-                     "Impossible d'exporter les stocks", e.getMessage());
-        }
-    }
-
-    /**
-     * Exporte les maintenances en PDF
-     */
-    @FXML
-    private void exporterMaintenanceEnPDF() {
-        try {
-            Document document = new Document();
-            File file = new File("Maintenances_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf");
-            PdfWriter.getInstance(document, new FileOutputStream(file));
-            
-            document.open();
-            
-            // Titre
-            Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
-            Paragraph title = new Paragraph("Planning de Maintenance - Service Logistique", titleFont);
-            title.setAlignment(Element.ALIGN_CENTER);
-            document.add(title);
-            
-            Paragraph date = new Paragraph("Date: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
-            date.setAlignment(Element.ALIGN_CENTER);
-            document.add(date);
-            document.add(new Paragraph(" "));
-            
-            // Statistiques résumées
-            Font sectionFont = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD);
-            document.add(new Paragraph("Résumé", sectionFont));
-            
-            Map<String, Integer> stats = new HashMap<>();
-            stats.put("Total", maintenances.size());
-            stats.put("Effectuées", 0);
-            stats.put("Programmées", 0);
-            stats.put("Proches", 0);
-            stats.put("Urgentes", 0);
-            stats.put("En retard", 0);
-            
-            for (Maintenance maintenance : maintenances) {
-                if (maintenance.isEffectuee()) {
-                    stats.put("Effectuées", stats.get("Effectuées") + 1);
-                } else {
-                    switch (maintenance.getStatut()) {
-                        case STATUT_VERT:
-                            stats.put("Programmées", stats.get("Programmées") + 1);
-                            break;
-                        case STATUT_ORANGE:
-                            stats.put("Proches", stats.get("Proches") + 1);
-                            break;
-                        case STATUT_ROUGE:
-                            stats.put("Urgentes", stats.get("Urgentes") + 1);
-                            break;
-                        case STATUT_VIOLET:
-                            stats.put("En retard", stats.get("En retard") + 1);
-                            break;
-                    }
-                }
-            }
-            
-            for (Map.Entry<String, Integer> entry : stats.entrySet()) {
-                document.add(new Paragraph(entry.getKey() + ": " + entry.getValue()));
-            }
-            document.add(new Paragraph(" "));
-            
-            // Tableau détaillé
-            document.add(new Paragraph("Détail des Maintenances", sectionFont));
-            document.add(new Paragraph(" "));
-            
-            PdfPTable table = new PdfPTable(6);
-            table.setWidthPercentage(100);
-            
-            // En-têtes
-            String[] headers = {"Statut", "Date", "Désignation", "Type", "Description", "Effectuée"};
-            for (String header : headers) {
-                PdfPCell cell = new PdfPCell(new Phrase(header));
-                cell.setBackgroundColor(BaseColor.LIGHT_GRAY);
-                cell.setHorizontalAlignment(Element.ALIGN_CENTER);
-                table.addCell(cell);
-            }
-            
-            // Données
-            for (Maintenance maintenance : maintenances) {
-                // Statut avec couleur
-                PdfPCell statutCell = new PdfPCell(new Phrase(getStatutMaintenanceText(maintenance.getStatut(), maintenance.isEffectuee())));
-                if (maintenance.isEffectuee()) {
-                    statutCell.setBackgroundColor(BaseColor.BLUE);
-                } else {
-                    switch (maintenance.getStatut()) {
-                        case STATUT_VERT:
-                            statutCell.setBackgroundColor(BaseColor.GREEN);
-                            break;
-                        case STATUT_ORANGE:
-                            statutCell.setBackgroundColor(BaseColor.ORANGE);
-                            break;
-                        case STATUT_ROUGE:
-                            statutCell.setBackgroundColor(BaseColor.RED);
-                            break;
-                        case STATUT_VIOLET:
-                            statutCell.setBackgroundColor(BaseColor.MAGENTA);
-                            break;
-                    }
-                }
-                table.addCell(statutCell);
-                
-                table.addCell(maintenance.getDate());
-                table.addCell(maintenance.getDesignation());
-                table.addCell(maintenance.getType());
-                table.addCell(maintenance.getDescription());
-                table.addCell(maintenance.isEffectuee() ? "Oui" : "Non");
-            }
-            
-            document.add(table);
-            document.close();
-            
-            showAlert(Alert.AlertType.INFORMATION, "Export réussi", 
-                     "Export des maintenances réalisé avec succès", 
-                     "Fichier: " + file.getAbsolutePath());
-            
-            HistoryManager.logCreation("Accueil Logistique", "Export PDF des maintenances");
-            
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Erreur lors de l'export des maintenances", e);
-            showAlert(Alert.AlertType.ERROR, "Erreur d'export", 
-                     "Impossible d'exporter les maintenances", e.getMessage());
-        }
-    }
-
-    /**
-     * Convertit le statut en texte lisible
-     */
-    private String getStatutText(String statut) {
-        switch (statut) {
-            case STATUT_VERT: return "Normal";
-            case STATUT_ORANGE: return "Attention";
-            case STATUT_ROUGE: return "Faible";
-            case STATUT_VIOLET: return "Critique";
-            default: return "Inconnu";
-        }
-    }
-
-    /**
-     * Convertit le statut de maintenance en texte lisible
-     */
-    private String getStatutMaintenanceText(String statut, boolean effectuee) {
-        if (effectuee) return "Effectuée";
-        
-        switch (statut) {
-            case STATUT_VERT: return "Programmée";
-            case STATUT_ORANGE: return "Proche";
-            case STATUT_ROUGE: return "Urgente";
-            case STATUT_VIOLET: return "En retard";
-            case STATUT_BLEU: return "Effectuée";
-            default: return "Inconnu";
-        }
-    }
-
     
     /**
      * Configure la colonne "Effectuée" avec des cases à cocher
@@ -794,7 +971,8 @@ public class AccueilLogController implements Initializable {
         
         deleteItem.setOnAction(event -> {
             if (!row.isEmpty() && editModeMaintenance) {
-                deleteMaintenance(row.getItem());
+                maintenanceTable.getSelectionModel().select(row.getItem());
+                supprimerMaintenanceSelectionnee();
             }
         });
         
@@ -875,26 +1053,6 @@ public class AccueilLogController implements Initializable {
     }
     
     /**
-     * Supprime une maintenance du tableau
-     */
-    private void deleteMaintenance(Maintenance maintenance) {
-        if (maintenance != null) {
-            Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
-            confirmation.setTitle("Confirmation de suppression");
-            confirmation.setHeaderText("Supprimer une maintenance");
-            confirmation.setContentText("Êtes-vous sûr de vouloir supprimer cette maintenance : " + maintenance.getDesignation() + " ?");
-            
-            Optional<ButtonType> result = confirmation.showAndWait();
-            if (result.isPresent() && result.get() == ButtonType.OK) {
-                maintenances.remove(maintenance);
-                maintenanceTable.refresh();
-                updateStatusIndicators();
-                LOGGER.info("Maintenance supprimée: " + maintenance.getDesignation());
-            }
-        }
-    }
-    
-    /**
      * Charge les données depuis la base de données
      */
     private void loadDataFromDatabase() {
@@ -904,12 +1062,17 @@ public class AccueilLogController implements Initializable {
     }
     
     /**
-     * Charge les stocks depuis la base de données
+     * Charge les stocks depuis la base de données avec les nouvelles colonnes
      */
     private void loadStocksFromDatabase() {
         stocks.clear();
         
-        try (PreparedStatement statement = connection.prepareStatement("SELECT * FROM stocks")) {
+        String sql = """
+            SELECT id, designation, quantite, etat, description, valeur_critique, statut,
+                   date_creation, quantite_initiale
+            FROM stocks""";
+        
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             try (ResultSet rs = statement.executeQuery()) {
                 while (rs.next()) {
                     int id = rs.getInt("id");
@@ -920,7 +1083,15 @@ public class AccueilLogController implements Initializable {
                     int valeurCritique = rs.getInt("valeur_critique");
                     String statut = rs.getString("statut");
                     
-                    stocks.add(new Stock(id, designation, quantite, etat, description, valeurCritique, statut));
+                    // Nouvelles colonnes
+                    Timestamp dateCreationTs = rs.getTimestamp("date_creation");
+                    LocalDateTime dateCreation = dateCreationTs != null ? 
+                                                dateCreationTs.toLocalDateTime() : LocalDateTime.now();
+                    int quantiteInitiale = rs.getInt("quantite_initiale");
+                    
+                    Stock stock = new Stock(id, designation, quantite, etat, description, 
+                                          valeurCritique, statut, dateCreation, quantiteInitiale);
+                    stocks.add(stock);
                 }
             }
             LOGGER.info("Chargement des stocks terminé: " + stocks.size() + " éléments");
@@ -931,6 +1102,18 @@ public class AccueilLogController implements Initializable {
                      e.getMessage());
         }
     }
+    
+    private void supprimerStockSelectionne() {
+        Stock stockSelectionne = stocksTable.getSelectionModel().getSelectedItem();
+        if (stockSelectionne == null) {
+            showAlert(Alert.AlertType.WARNING, "Sélection requise", 
+                     "Veuillez sélectionner un équipement à supprimer", null);
+            return;
+        }
+        
+        supprimerStockAvecConfirmation(stockSelectionne);
+    }
+
     
     /**
      * Charge les maintenances depuis la base de données
@@ -965,23 +1148,25 @@ public class AccueilLogController implements Initializable {
      * Active/désactive le mode d'édition pour les stocks
      */
     private void toggleEditModeStocks() {
-    	 editModeStocks = !editModeStocks;
-    	    btnMajStocks.setText(editModeStocks ? "Terminer" : "Mettre à jour");
-    	    btnValiderStocks.setVisible(editModeStocks);
-    	    // Nous gardons le bouton Ajouter toujours visible, mais désactivé quand pas en mode édition
-    	    btnAjouterStock.setDisable(!editModeStocks);
-    	    
-    	    LOGGER.info("Mode édition stocks: " + (editModeStocks ? "activé" : "désactivé"));
+        editModeStocks = !editModeStocks;
+        btnMajStocks.setText(editModeStocks ? "Terminer" : "Mettre à jour");
+        btnValiderStocks.setVisible(editModeStocks);
+        btnAjouterStock.setDisable(!editModeStocks);
+        
+        // Gérer le bouton supprimer selon la sélection et le mode édition
+        Stock selectedStock = stocksTable.getSelectionModel().getSelectedItem();
+        btnSupprimerStock.setDisable(!(editModeStocks && selectedStock != null));
+        
+        LOGGER.info("Mode édition stocks: " + (editModeStocks ? "activé" : "désactivé"));
     }
     
     /**
      * Active/désactive le mode d'édition pour les maintenances
      */
     private void toggleEditModeMaintenance() {
-    	editModeMaintenance = !editModeMaintenance;
+        editModeMaintenance = !editModeMaintenance;
         btnMajMaintenance.setText(editModeMaintenance ? "Terminer" : "Mettre à jour");
         btnValiderMaintenance.setVisible(editModeMaintenance);
-        // Nous gardons le bouton Ajouter toujours visible, mais désactivé quand pas en mode édition
         btnAjouterMaintenance.setDisable(!editModeMaintenance);
         
         // Rafraîchir le tableau pour mettre à jour l'état activé/désactivé des cases à cocher
@@ -1010,8 +1195,9 @@ public class AccueilLogController implements Initializable {
         TextField designationField = new TextField(stock.getDesignation());
         designationField.setPromptText("Désignation");
         
-        TextField quantiteField = new TextField(stock.getQuantite() > 0 ? String.valueOf(stock.getQuantite()) : "");
-        quantiteField.setPromptText("Quantité");
+        Spinner<Integer> quantiteSpinner = new Spinner<>(0, 99999, 
+                                                        stock.getQuantite() > 0 ? stock.getQuantite() : 1);
+        quantiteSpinner.setEditable(true);
         
         TextField etatField = new TextField(stock.getEtat());
         etatField.setPromptText("État");
@@ -1019,8 +1205,9 @@ public class AccueilLogController implements Initializable {
         TextArea descriptionField = new TextArea(stock.getDescription());
         descriptionField.setPromptText("Description");
         
-        TextField valeurCritiqueField = new TextField(stock.getValeurCritique() > 0 ? String.valueOf(stock.getValeurCritique()) : "");
-        valeurCritiqueField.setPromptText("Valeur critique");
+        Spinner<Integer> valeurCritiqueSpinner = new Spinner<>(1, 99999, 
+                                                              stock.getValeurCritique() > 0 ? stock.getValeurCritique() : 10);
+        valeurCritiqueSpinner.setEditable(true);
         
         // Créer la disposition en grille
         GridPane grid = new GridPane();
@@ -1031,11 +1218,11 @@ public class AccueilLogController implements Initializable {
         grid.add(new Label("Désignation:"), 0, 0);
         grid.add(designationField, 1, 0);
         grid.add(new Label("Quantité:"), 0, 1);
-        grid.add(quantiteField, 1, 1);
+        grid.add(quantiteSpinner, 1, 1);
         grid.add(new Label("État:"), 0, 2);
         grid.add(etatField, 1, 2);
         grid.add(new Label("Valeur critique:"), 0, 3);
-        grid.add(valeurCritiqueField, 1, 3);
+        grid.add(valeurCritiqueSpinner, 1, 3);
         grid.add(new Label("Description:"), 0, 4);
         grid.add(descriptionField, 1, 4);
         
@@ -1045,6 +1232,7 @@ public class AccueilLogController implements Initializable {
         
         dialog.getDialogPane().setContent(grid);
         final Stock existingStock = stock;
+        
         // Conversion du résultat
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == saveButtonType) {
@@ -1056,8 +1244,8 @@ public class AccueilLogController implements Initializable {
                         return null;
                     }
                     
-                    int quantite = Integer.parseInt(quantiteField.getText().trim());
-                    int valeurCritique = Integer.parseInt(valeurCritiqueField.getText().trim());
+                    int quantite = quantiteSpinner.getValue();
+                    int valeurCritique = valeurCritiqueSpinner.getValue();
                     
                     if (quantite < 0) {
                         showAlert(Alert.AlertType.ERROR, "Erreur de saisie", 
@@ -1079,13 +1267,22 @@ public class AccueilLogController implements Initializable {
                     updatedStock.setDescription(descriptionField.getText().trim());
                     updatedStock.setValeurCritique(valeurCritique);
                     
+                    // Pour un nouvel équipement, définir la quantité initiale
+                    if (isNew) {
+                        updatedStock.setQuantiteInitiale(quantite);
+                        updatedStock.setDateCreation(LocalDateTime.now());
+                    } else {
+                        updatedStock.setQuantiteInitiale(existingStock.getQuantiteInitiale());
+                        updatedStock.setDateCreation(existingStock.getDateCreation());
+                    }
+                    
                     // Calculer le statut
                     updatedStock.setStatut(calculateStockStatus(quantite, valeurCritique));
                     
                     return updatedStock;
-                } catch (NumberFormatException e) {
-                    showAlert(Alert.AlertType.ERROR, "Erreur de format", 
-                            "La quantité et la valeur critique doivent être des nombres entiers", null);
+                } catch (Exception e) {
+                    showAlert(Alert.AlertType.ERROR, "Erreur de saisie", 
+                            "Erreur dans les données saisies", e.getMessage());
                     return null;
                 }
             }
@@ -1099,6 +1296,7 @@ public class AccueilLogController implements Initializable {
             if (isNew) {
                 stocks.add(updatedStock);
                 LOGGER.info("Nouveau stock ajouté: " + updatedStock.getDesignation());
+                HistoryManager.logCreation("Stocks", "Ajout équipement: " + updatedStock.getDesignation());
             } else {
                 // Mettre à jour l'objet existant avec les nouvelles valeurs
                 existingStock.setDesignation(updatedStock.getDesignation());
@@ -1108,6 +1306,7 @@ public class AccueilLogController implements Initializable {
                 existingStock.setValeurCritique(updatedStock.getValeurCritique());
                 existingStock.setStatut(updatedStock.getStatut());
                 LOGGER.info("Stock modifié: " + updatedStock.getDesignation());
+                HistoryManager.logUpdate("Stocks", "Modification équipement: " + updatedStock.getDesignation());
             }
             // Rafraîchir l'affichage
             stocksTable.refresh();
@@ -1235,7 +1434,6 @@ public class AccueilLogController implements Initializable {
                 return updatedMaintenance;
             }
             return null;
-            
         });
         
         // Afficher le dialogue et traiter le résultat
@@ -1245,6 +1443,7 @@ public class AccueilLogController implements Initializable {
             if (isNew) {
                 maintenances.add(updatedMaintenance);
                 LOGGER.info("Nouvelle maintenance ajoutée: " + updatedMaintenance.getDesignation());
+                HistoryManager.logCreation("Maintenances", "Ajout maintenance: " + updatedMaintenance.getDesignation());
             } else {
                 // Mettre à jour l'objet existant avec les nouvelles valeurs
                 existingMaintenance.setDate(updatedMaintenance.getDate());
@@ -1254,6 +1453,7 @@ public class AccueilLogController implements Initializable {
                 existingMaintenance.setEffectuee(updatedMaintenance.isEffectuee());
                 existingMaintenance.setStatut(updatedMaintenance.getStatut());
                 LOGGER.info("Maintenance modifiée: " + updatedMaintenance.getDesignation());
+                HistoryManager.logUpdate("Maintenances", "Modification maintenance: " + updatedMaintenance.getDesignation());
             }
             // Rafraîchir l'affichage
             maintenanceTable.refresh();
@@ -1292,7 +1492,7 @@ public class AccueilLogController implements Initializable {
     }
     
     /**
-     * Enregistre les stocks dans la base de données
+     * Enregistre les stocks dans la base de données avec les nouvelles colonnes
      */
     private void saveStocksToDatabase() {
         try {
@@ -1355,164 +1555,70 @@ public class AccueilLogController implements Initializable {
     }
     
     /**
-     * Met à jour ou insère les stocks dans la base de données
+     * Met à jour ou insère les stocks dans la base de données avec les nouvelles colonnes
      */
     private void updateOrInsertStocks() throws SQLException {
-        String upsertQuery = "INSERT INTO stocks (id, designation, quantite, etat, description, valeur_critique, statut) " +
-                           "VALUES (?, ?, ?, ?, ?, ?, ?) " +
-                           "ON DUPLICATE KEY UPDATE designation=VALUES(designation), quantite=VALUES(quantite), " +
-                           "etat=VALUES(etat), description=VALUES(description), valeur_critique=VALUES(valeur_critique), " +
-                           "statut=VALUES(statut)";
+        String upsertQuery = """
+            INSERT INTO stocks (id, designation, quantite, etat, description, valeur_critique, statut, date_creation, quantite_initiale)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+                designation=VALUES(designation), 
+                quantite=VALUES(quantite),
+                etat=VALUES(etat), 
+                description=VALUES(description), 
+                valeur_critique=VALUES(valeur_critique),
+                statut=VALUES(statut)""";
         
         try (PreparedStatement upsertStatement = connection.prepareStatement(upsertQuery, Statement.RETURN_GENERATED_KEYS)) {
             for (Stock stock : stocks) {
                 // Mettre à jour le statut avant l'enregistrement
                 stock.setStatut(calculateStockStatus(stock.getQuantite(), stock.getValeurCritique()));
                 
-                upsertStatement.setInt(1, stock.getId());
-                upsertStatement.setString(2, stock.getDesignation());
-                upsertStatement.setInt(3, stock.getQuantite());
-                upsertStatement.setString(4, stock.getEtat());
-                upsertStatement.setString(5, stock.getDescription());
-                upsertStatement.setInt(6, stock.getValeurCritique());
-                upsertStatement.setString(7, stock.getStatut());
-                
-                upsertStatement.executeUpdate();
-                
-                // Si c'est un nouvel élément, récupérer l'ID généré
+                // Si c'est un nouvel élément (ID = 0), ne pas l'inclure dans l'INSERT avec ID
                 if (stock.getId() <= 0) {
-                    try (ResultSet rs = upsertStatement.getGeneratedKeys()) {
-                        if (rs.next()) {
-                            stock.setId(rs.getInt(1));
+                    // Pour les nouveaux éléments, utiliser NULL pour l'ID auto-increment
+                    String insertQuery = """
+                        INSERT INTO stocks (designation, quantite, etat, description, valeur_critique, statut, date_creation, quantite_initiale)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""";
+                        
+                    try (PreparedStatement insertStatement = connection.prepareStatement(insertQuery, Statement.RETURN_GENERATED_KEYS)) {
+                        insertStatement.setString(1, stock.getDesignation());
+                        insertStatement.setInt(2, stock.getQuantite());
+                        insertStatement.setString(3, stock.getEtat());
+                        insertStatement.setString(4, stock.getDescription());
+                        insertStatement.setInt(5, stock.getValeurCritique());
+                        insertStatement.setString(6, stock.getStatut());
+                        insertStatement.setTimestamp(7, Timestamp.valueOf(stock.getDateCreation()));
+                        insertStatement.setInt(8, stock.getQuantiteInitiale());
+                        
+                        insertStatement.executeUpdate();
+                        
+                        // Récupérer l'ID généré
+                        try (ResultSet rs = insertStatement.getGeneratedKeys()) {
+                            if (rs.next()) {
+                                stock.setId(rs.getInt(1));
+                                LOGGER.info("Nouveau stock créé avec ID: " + stock.getId());
+                            }
                         }
                     }
-                }
-            }
-        }
-    }
-    
-    /**
-     * Génère un rapport de statut complet
-     */
-    @FXML
-    private void genererRapportStatut() {
-        try {
-            // Créer un document
-            Document document = new Document();
-            File file = new File("Rapport_Statut_Logistique_" + 
-                               LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf");
-            PdfWriter.getInstance(document, new FileOutputStream(file));
-            
-            document.open();
-            
-            // Titre
-            Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
-            Paragraph title = new Paragraph("Rapport de Statut Logistique", titleFont);
-            title.setAlignment(Element.ALIGN_CENTER);
-            document.add(title);
-            
-            Paragraph date = new Paragraph("Date: " + LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
-            date.setAlignment(Element.ALIGN_CENTER);
-            document.add(date);
-            document.add(new Paragraph(" "));
-            
-            // Section Stocks
-            Font sectionFont = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD);
-            document.add(new Paragraph("1. État des Stocks", sectionFont));
-            document.add(new Paragraph(" "));
-            
-            // Statistiques stocks
-            Map<String, Integer> stockStats = new HashMap<>();
-            stockStats.put("Total", stocks.size());
-            stockStats.put("Critiques", 0);
-            stockStats.put("Faibles", 0);
-            stockStats.put("Normaux", 0);
-            
-            for (Stock stock : stocks) {
-                switch (stock.getStatut()) {
-                    case STATUT_VIOLET:
-                        stockStats.put("Critiques", stockStats.get("Critiques") + 1);
-                        break;
-                    case STATUT_ROUGE:
-                        stockStats.put("Faibles", stockStats.get("Faibles") + 1);
-                        break;
-                    case STATUT_ORANGE:
-                    case STATUT_VERT:
-                        stockStats.put("Normaux", stockStats.get("Normaux") + 1);
-                        break;
-                }
-            }
-            
-            PdfPTable stockTable = new PdfPTable(2);
-            stockTable.setWidthPercentage(50);
-            stockTable.addCell("Statut");
-            stockTable.addCell("Nombre");
-            
-            for (Map.Entry<String, Integer> entry : stockStats.entrySet()) {
-                stockTable.addCell(entry.getKey());
-                stockTable.addCell(entry.getValue().toString());
-            }
-            
-            document.add(stockTable);
-            document.add(new Paragraph(" "));
-            
-            // Section Maintenances
-            document.add(new Paragraph("2. État des Maintenances", sectionFont));
-            document.add(new Paragraph(" "));
-            
-            // Statistiques maintenances
-            Map<String, Integer> maintenanceStats = new HashMap<>();
-            maintenanceStats.put("Total", maintenances.size());
-            maintenanceStats.put("Effectuées", 0);
-            maintenanceStats.put("En retard", 0);
-            maintenanceStats.put("Urgentes", 0);
-            maintenanceStats.put("Programmées", 0);
-            
-            for (Maintenance maintenance : maintenances) {
-                if (maintenance.isEffectuee()) {
-                    maintenanceStats.put("Effectuées", maintenanceStats.get("Effectuées") + 1);
                 } else {
-                    switch (maintenance.getStatut()) {
-                        case STATUT_VIOLET:
-                            maintenanceStats.put("En retard", maintenanceStats.get("En retard") + 1);
-                            break;
-                        case STATUT_ROUGE:
-                            maintenanceStats.put("Urgentes", maintenanceStats.get("Urgentes") + 1);
-                            break;
-                        case STATUT_ORANGE:
-                        case STATUT_VERT:
-                            maintenanceStats.put("Programmées", maintenanceStats.get("Programmées") + 1);
-                            break;
-                    }
+                    // Pour les éléments existants, utiliser l'upsert normal
+                    upsertStatement.setInt(1, stock.getId());
+                    upsertStatement.setString(2, stock.getDesignation());
+                    upsertStatement.setInt(3, stock.getQuantite());
+                    upsertStatement.setString(4, stock.getEtat());
+                    upsertStatement.setString(5, stock.getDescription());
+                    upsertStatement.setInt(6, stock.getValeurCritique());
+                    upsertStatement.setString(7, stock.getStatut());
+                    upsertStatement.setTimestamp(8, Timestamp.valueOf(stock.getDateCreation()));
+                    upsertStatement.setInt(9, stock.getQuantiteInitiale());
+                    
+                    upsertStatement.executeUpdate();
                 }
             }
-            
-            PdfPTable maintenanceTable = new PdfPTable(2);
-            maintenanceTable.setWidthPercentage(50);
-            maintenanceTable.addCell("Statut");
-            maintenanceTable.addCell("Nombre");
-            
-            for (Map.Entry<String, Integer> entry : maintenanceStats.entrySet()) {
-                maintenanceTable.addCell(entry.getKey());
-                maintenanceTable.addCell(entry.getValue().toString());
-            }
-            
-            document.add(maintenanceTable);
-            
-            document.close();
-            
-            showAlert(Alert.AlertType.INFORMATION, "Rapport généré", 
-                     "Le rapport de statut a été généré avec succès", 
-                     "Fichier: " + file.getAbsolutePath());
-            
-            LOGGER.info("Rapport de statut généré: " + file.getAbsolutePath());
-            
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Erreur lors de la génération du rapport", e);
-            showAlert(Alert.AlertType.ERROR, "Erreur", 
-                     "Impossible de générer le rapport", e.getMessage());
         }
     }
+
     
     /**
      * Enregistre les maintenances dans la base de données
@@ -1577,11 +1683,16 @@ public class AccueilLogController implements Initializable {
      * Met à jour ou insère les maintenances dans la base de données
      */
     private void updateOrInsertMaintenances() throws SQLException {
-        String upsertQuery = "INSERT INTO maintenances (id, date_maintenance, designation, type_maintenance, description, effectuee, statut) " +
-                           "VALUES (?, ?, ?, ?, ?, ?, ?) " +
-                           "ON DUPLICATE KEY UPDATE date_maintenance=VALUES(date_maintenance), designation=VALUES(designation), " +
-                           "type_maintenance=VALUES(type_maintenance), description=VALUES(description), effectuee=VALUES(effectuee), " +
-                           "statut=VALUES(statut)";
+        String upsertQuery = """
+            INSERT INTO maintenances (id, date_maintenance, designation, type_maintenance, description, effectuee, statut)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+                date_maintenance=VALUES(date_maintenance), 
+                designation=VALUES(designation),
+                type_maintenance=VALUES(type_maintenance), 
+                description=VALUES(description), 
+                effectuee=VALUES(effectuee),
+                statut=VALUES(statut)""";
         
         try (PreparedStatement upsertStatement = connection.prepareStatement(upsertQuery, Statement.RETURN_GENERATED_KEYS)) {
             for (Maintenance maintenance : maintenances) {
