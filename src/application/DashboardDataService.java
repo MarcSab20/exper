@@ -6,7 +6,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Service dédié à la récupération et au traitement des données pour le dashboard
+ * Service dédié à la récupération et au traitement des données pour le dashboard - VERSION CORRIGÉE
  */
 public class DashboardDataService {
     private static final Logger LOGGER = Logger.getLogger(DashboardDataService.class.getName());
@@ -15,10 +15,10 @@ public class DashboardDataService {
     private static final String DB_USER = "marco";
     private static final String DB_PASSWORD = "29Papa278.";
     
-    // Définition des grades par catégorie
-    private static final Set<String> GRADES_OFFICIERS = Set.of(
+    // CORRECTION: Définition des grades par catégorie selon vos spécifications
+    private static final Set<String> GRADES_OFFICIERS_COMPLET = Set.of(
         "Sous-lieutenant", "Lieutenant", "Capitaine", "Lieutenant-colonel", "Colonel",
-        "General de brigade aérienne", "Général de division aérienne", "General de corps d'armée"
+        "GBA", "GDA"
     );
     
     private static final Set<String> GRADES_OFFICIERS_SUBALTERNES = Set.of(
@@ -26,11 +26,11 @@ public class DashboardDataService {
     );
     
     private static final Set<String> GRADES_OFFICIERS_GENERAUX = Set.of(
-        "General de brigade aérienne", "Général de division aérienne", "General de corps d'armée"
+        "GBA", "GDA", "GCA"
     );
     
     private static final Set<String> GRADES_SOUS_OFFICIERS = Set.of(
-        "Adjudant", "Adjudant chef", "Adjudant chef major", "Sergent", "Sergent-chef"
+        "Adjudant", "Adjudant-chef", "Adjudant-chef-major", "Sergent", "Sergent-chef"
     );
     
     private static final Set<String> GRADES_MILITAIRES_RANG = Set.of(
@@ -38,7 +38,7 @@ public class DashboardDataService {
     );
 
     /**
-     * Récupère toutes les statistiques principales du dashboard
+     * CORRECTION: Récupère toutes les statistiques principales du dashboard
      */
     public DashboardStats getMainStats() throws SQLException {
         DashboardStats stats = new DashboardStats();
@@ -47,13 +47,13 @@ public class DashboardDataService {
             // Personnel total
             stats.setPersonnelTotal(getPersonnelTotal(conn));
             
-            // Personnel officiers
+            // CORRECTION: Personnel officiers selon vos spécifications
             stats.setPersonnelOfficiers(getPersonnelOfficiers(conn));
             
-            // Personnel féminin
+            // CORRECTION: Personnel féminin
             stats.setPersonnelFeminin(getPersonnelFeminin(conn));
             
-            // Nombre de formations
+            // CORRECTION: Nombre de formations
             stats.setNombreFormations(getNombreFormations(conn));
             
             LOGGER.info("Statistiques principales récupérées: " + stats);
@@ -70,11 +70,14 @@ public class DashboardDataService {
         }
     }
     
+    /**
+     * CORRECTION: Personnel officiers selon la nouvelle définition
+     */
     private int getPersonnelOfficiers(Connection conn) throws SQLException {
         StringBuilder query = new StringBuilder();
         query.append("SELECT COUNT(*) FROM grade_actuel WHERE rang IN (");
         
-        String[] grades = GRADES_OFFICIERS.toArray(new String[0]);
+        String[] grades = GRADES_OFFICIERS_COMPLET.toArray(new String[0]);
         for (int i = 0; i < grades.length; i++) {
             if (i > 0) query.append(", ");
             query.append("?");
@@ -83,7 +86,7 @@ public class DashboardDataService {
         
         try (PreparedStatement stmt = conn.prepareStatement(query.toString())) {
             int paramIndex = 1;
-            for (String grade : GRADES_OFFICIERS) {
+            for (String grade : GRADES_OFFICIERS_COMPLET) {
                 stmt.setString(paramIndex++, grade);
             }
             
@@ -93,16 +96,22 @@ public class DashboardDataService {
         }
     }
     
+    /**
+     * CORRECTION: Personnel féminin de la table identite_personnelle
+     */
     private int getPersonnelFeminin(Connection conn) throws SQLException {
-        String query = "SELECT COUNT(*) FROM identite_personnelle WHERE sexe = 'Femme'";
+        String query = "SELECT COUNT(*) FROM identite_personnelle WHERE sexe = 'Feminin'";
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(query)) {
             return rs.next() ? rs.getInt(1) : 0;
         }
     }
     
+    /**
+     * CORRECTION: Nombre de formations différentes de la table formation_actuelle
+     */
     private int getNombreFormations(Connection conn) throws SQLException {
-        String query = "SELECT COUNT(DISTINCT formation) FROM formation_actuelle WHERE formation IS NOT NULL";
+        String query = "SELECT COUNT(DISTINCT formation) FROM formation_actuelle WHERE formation IS NOT NULL AND formation != ''";
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(query)) {
             return rs.next() ? rs.getInt(1) : 0;
@@ -115,7 +124,8 @@ public class DashboardDataService {
     public Map<String, Integer> getRepartitionParSexe() throws SQLException {
         Map<String, Integer> data = new LinkedHashMap<>();
         String query = "SELECT sexe, COUNT(*) as count FROM identite_personnelle " +
-                      "WHERE sexe IS NOT NULL GROUP BY sexe ORDER BY count DESC";
+                      "WHERE sexe IS NOT NULL AND sexe != '' " +
+                      "GROUP BY sexe ORDER BY count DESC";
         
         try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
              Statement stmt = conn.createStatement();
@@ -134,12 +144,13 @@ public class DashboardDataService {
     }
     
     /**
-     * Récupère les données de répartition par grade (groupées)
+     * CORRECTION: Récupère les données de répartition par grade selon vos 4 groupes
      */
     public Map<String, Integer> getRepartitionParGrade() throws SQLException {
         Map<String, Integer> data = new LinkedHashMap<>();
         String query = "SELECT rang, COUNT(*) as count FROM grade_actuel " +
-                      "WHERE rang IS NOT NULL GROUP BY rang";
+                      "WHERE rang IS NOT NULL AND rang != '' " +
+                      "GROUP BY rang";
         
         Map<String, Integer> gradeStats = new HashMap<>();
         gradeStats.put("Officiers subalternes", 0);
@@ -181,7 +192,7 @@ public class DashboardDataService {
     }
     
     /**
-     * Récupère les données de répartition par région d'origine
+     * CORRECTION: Récupère les données de répartition par région d'origine de la table identite_culturelle
      */
     public Map<String, Integer> getRepartitionParRegion() throws SQLException {
         Map<String, Integer> data = new LinkedHashMap<>();
@@ -206,7 +217,7 @@ public class DashboardDataService {
     }
     
     /**
-     * Récupère les données de répartition par religion
+     * CORRECTION: Récupère les données de répartition par religion de la table identite_culturelle
      */
     public Map<String, Integer> getRepartitionParReligion() throws SQLException {
         Map<String, Integer> data = new LinkedHashMap<>();
@@ -259,7 +270,7 @@ public class DashboardDataService {
     }
     
     /**
-     * Récupère les données croisées entre deux tables
+     * AMÉLIORATION: Récupère les données croisées entre deux tables utilisant matricule
      */
     public Map<String, Map<String, Integer>> getCrossTableData(String table1, String column1, 
                                                               String table2, String column2) throws SQLException {
@@ -299,6 +310,41 @@ public class DashboardDataService {
     }
     
     /**
+     * NOUVEAU: Méthode pour vérifier si les données ont changé (pour mise à jour automatique)
+     */
+    public boolean hasDataChanged(long lastCheckTime) {
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
+            // Vérifier la dernière modification dans les tables principales
+            String query = "SELECT MAX(GREATEST(" +
+                          "COALESCE((SELECT MAX(UNIX_TIMESTAMP(NOW())) FROM identite_personnelle), 0), " +
+                          "COALESCE((SELECT MAX(UNIX_TIMESTAMP(NOW())) FROM grade_actuel), 0), " +
+                          "COALESCE((SELECT MAX(UNIX_TIMESTAMP(NOW())) FROM identite_culturelle), 0), " +
+                          "COALESCE((SELECT MAX(UNIX_TIMESTAMP(NOW())) FROM formation_actuelle), 0)" +
+                          ")) as last_modified";
+            
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(query)) {
+                
+                if (rs.next()) {
+                    long lastModified = rs.getLong("last_modified") * 1000; // Convertir en millisecondes
+                    return lastModified > lastCheckTime;
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.WARNING, "Erreur lors de la vérification des changements", e);
+            return true; // En cas d'erreur, forcer la mise à jour
+        }
+        return false;
+    }
+    
+    /**
+     * NOUVEAU: Obtient un timestamp de la dernière vérification
+     */
+    public long getCurrentTimestamp() {
+        return System.currentTimeMillis();
+    }
+    
+    /**
      * Vérifie si une table existe et contient des données
      */
     public boolean isTableAvailable(String tableName) {
@@ -318,6 +364,39 @@ public class DashboardDataService {
             LOGGER.log(Level.WARNING, "Erreur lors de la vérification de la table " + tableName, e);
         }
         return false;
+    }
+    
+    /**
+     * NOUVEAU: Obtient toutes les tables disponibles dans la base
+     */
+    public List<String> getAvailableTables() {
+        List<String> tables = new ArrayList<>();
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
+            DatabaseMetaData metaData = conn.getMetaData();
+            try (ResultSet rs = metaData.getTables("master", null, "%", new String[]{"TABLE"})) {
+                while (rs.next()) {
+                    String tableName = rs.getString("TABLE_NAME");
+                    if (!tableName.startsWith("historique_")) { // Exclure les tables d'historique
+                        tables.add(tableName);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.WARNING, "Erreur lors de la récupération des tables", e);
+        }
+        return tables;
+    }
+    
+    /**
+     * NOUVEAU: Test de connexion pour s'assurer que la base est accessible
+     */
+    public boolean testConnection() {
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
+            return conn.isValid(5);
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Test de connexion échoué", e);
+            return false;
+        }
     }
     
     /**

@@ -27,7 +27,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Controller moderne et optimisé pour le dashboard
+ * Controller moderne et optimisé pour le dashboard - VERSION CORRIGÉE
  */
 public class dashboardController {
     private static final Logger LOGGER = Logger.getLogger(dashboardController.class.getName());
@@ -43,7 +43,7 @@ public class dashboardController {
     
     // Services
     private final DashboardDataService dataService = new DashboardDataService();
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(3);
     
     // État du dashboard
     private String currentService;
@@ -51,13 +51,14 @@ public class dashboardController {
     private List<ChartPersistenceService.ChartConfig> currentChartConfigs = new ArrayList<>();
     private Map<String, Chart> activeCharts = new LinkedHashMap<>();
     
-    // Indicateurs de chargement
+    // CORRECTION: Variables pour la mise à jour automatique
     private boolean isLoading = false;
     private boolean isInitialized = false;
+    private long lastDataCheckTime = 0;
     
     @FXML
     public void initialize() {
-        LOGGER.info("=== INITIALISATION DASHBOARD MODERNE ===");
+        LOGGER.info("=== INITIALISATION DASHBOARD MODERNE CORRIGÉ ===");
         
         try {
             // 1. Initialiser les informations de base
@@ -66,14 +67,13 @@ public class dashboardController {
             // 2. Configurer l'interface utilisateur
             setupUI();
             
-            // 3. Charger les données de manière asynchrone
-            loadDashboardDataAsync();
-            
-            // 4. Programmer les mises à jour automatiques
-            scheduleAutoRefresh();
-            
-            isInitialized = true;
-            LOGGER.info("Dashboard moderne initialisé avec succès");
+            // 3. CORRECTION: Charger les données de manière asynchrone avec callback
+            loadDashboardDataAsync(() -> {
+                // 4. Programmer les mises à jour automatiques après le chargement initial
+                scheduleAutoRefresh();
+                isInitialized = true;
+                LOGGER.info("Dashboard moderne initialisé avec succès");
+            });
             
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Erreur lors de l'initialisation du dashboard", e);
@@ -102,6 +102,7 @@ public class dashboardController {
      */
     private void setupUI() {
         if (chartsContainer != null) {
+            chartsContainer.getChildren().clear(); // CORRECTION: Vider le conteneur au départ
             chartsContainer.setHgap(25);
             chartsContainer.setVgap(25);
             chartsContainer.setPadding(new Insets(20));
@@ -138,9 +139,9 @@ public class dashboardController {
     }
     
     /**
-     * Charge les données du dashboard de manière asynchrone
+     * CORRECTION: Charge les données du dashboard avec callback
      */
-    private void loadDashboardDataAsync() {
+    private void loadDashboardDataAsync(Runnable onComplete) {
         if (isLoading) return;
         isLoading = true;
         
@@ -158,9 +159,30 @@ public class dashboardController {
         
         CompletableFuture<Void> chartsTask = CompletableFuture.runAsync(() -> {
             try {
+                // CORRECTION: D'abord charger les configurations
                 List<ChartPersistenceService.ChartConfig> configs = 
                     ChartPersistenceService.loadChartConfigs(currentService);
-                Platform.runLater(() -> loadChartsFromConfigs(configs));
+                
+                // Si aucune configuration n'existe, créer les graphiques par défaut
+                if (configs.isEmpty()) {
+                    LOGGER.info("Aucune configuration trouvée, création des graphiques par défaut");
+                    Platform.runLater(() -> {
+                        createAndSaveDefaultCharts();
+                        // Recharger après avoir créé les défauts
+                        CompletableFuture.runAsync(() -> {
+                            try {
+                                List<ChartPersistenceService.ChartConfig> newConfigs = 
+                                    ChartPersistenceService.loadChartConfigs(currentService);
+                                Platform.runLater(() -> loadChartsFromConfigs(newConfigs));
+                            } catch (Exception e) {
+                                LOGGER.log(Level.SEVERE, "Erreur rechargement après défauts", e);
+                            }
+                        });
+                    });
+                } else {
+                    Platform.runLater(() -> loadChartsFromConfigs(configs));
+                }
+                
             } catch (Exception e) {
                 Platform.runLater(() -> showChartsError());
                 LOGGER.log(Level.SEVERE, "Erreur lors du chargement des graphiques", e);
@@ -173,16 +195,29 @@ public class dashboardController {
                 showLoadingIndicator(false);
                 updateEmptyState();
                 updateLastRefreshTime();
+                lastDataCheckTime = dataService.getCurrentTimestamp();
                 
                 if (throwable != null) {
                     LOGGER.log(Level.SEVERE, "Erreur lors du chargement complet", throwable);
+                }
+                
+                // Appeler le callback
+                if (onComplete != null) {
+                    onComplete.run();
                 }
             });
         });
     }
     
     /**
-     * Met à jour l'affichage des statistiques
+     * CORRECTION: Version surchargée sans callback pour les rafraîchissements
+     */
+    private void loadDashboardDataAsync() {
+        loadDashboardDataAsync(null);
+    }
+    
+    /**
+     * CORRECTION: Met à jour l'affichage des statistiques
      */
     private void updateStatsDisplay(DashboardDataService.DashboardStats stats) {
         if (personnelTotalCount != null) {
@@ -202,39 +237,82 @@ public class dashboardController {
     }
     
     /**
-     * Charge les graphiques à partir des configurations
+     * CORRECTION: Crée et sauvegarde les graphiques par défaut
+     */
+    private void createAndSaveDefaultCharts() {
+        LOGGER.info("Création des graphiques par défaut pour le service: " + currentService);
+        
+        // Créer les configurations par défaut selon vos spécifications
+        List<ChartPersistenceService.ChartConfig> defaultConfigs = Arrays.asList(
+            new ChartPersistenceService.ChartConfig("default_sexe", "camembert", "Répartition par Sexe", 
+                          "identite_personnelle", "sexe", null, null, false, true, 1),
+            new ChartPersistenceService.ChartConfig("default_grade", "histogramme", "Répartition par Grade", 
+                          "grade_actuel", "rang", null, null, false, true, 2),
+            new ChartPersistenceService.ChartConfig("default_region", "camembert", "Répartition par Région", 
+                          "identite_culturelle", "region_origine", null, null, false, true, 3),
+            new ChartPersistenceService.ChartConfig("default_religion", "histogramme", "Répartition par Religion", 
+                          "identite_culturelle", "religion", null, null, false, true, 4)
+        );
+        
+        // Sauvegarder chaque configuration
+        for (ChartPersistenceService.ChartConfig config : defaultConfigs) {
+            ChartPersistenceService.saveChartConfig(currentService, config);
+        }
+        
+        LOGGER.info("Graphiques par défaut créés et sauvegardés");
+    }
+    
+    /**
+     * CORRECTION: Charge les graphiques à partir des configurations
      */
     private void loadChartsFromConfigs(List<ChartPersistenceService.ChartConfig> configs) {
         if (chartsContainer == null) return;
         
+        // CORRECTION: Vider proprement le conteneur
         chartsContainer.getChildren().clear();
         activeCharts.clear();
-        currentChartConfigs = configs;
+        currentChartConfigs = new ArrayList<>(configs);
         
         if (configs.isEmpty()) {
-            LOGGER.info("Aucune configuration de graphique trouvée, création des graphiques par défaut");
-            createDefaultCharts();
+            LOGGER.warning("Aucune configuration de graphique à charger");
+            updateEmptyState();
+            updateChartsCount();
             return;
         }
         
         LOGGER.info("Chargement de " + configs.size() + " graphiques configurés");
         
+        // CORRECTION: Traiter les graphiques de manière séquentielle pour éviter les concurrences
         for (ChartPersistenceService.ChartConfig config : configs) {
-            CompletableFuture.runAsync(() -> {
-                try {
-                    Chart chart = createChartFromConfig(config);
-                    if (chart != null) {
-                        Platform.runLater(() -> addChartToContainer(chart, config));
-                    }
-                } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, "Erreur lors de la création du graphique: " + config.getChartId(), e);
-                }
-            });
+            createAndAddChartFromConfig(config);
         }
+        
+        updateChartsCount();
     }
     
     /**
-     * Crée un graphique à partir d'une configuration
+     * CORRECTION: Crée et ajoute un graphique de manière synchrone
+     */
+    private void createAndAddChartFromConfig(ChartPersistenceService.ChartConfig config) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                Chart chart = createChartFromConfig(config);
+                if (chart != null) {
+                    Platform.runLater(() -> {
+                        addChartToContainer(chart, config);
+                        LOGGER.fine("Graphique ajouté avec succès: " + config.getChartTitle());
+                    });
+                } else {
+                    LOGGER.warning("Impossible de créer le graphique: " + config.getChartId());
+                }
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Erreur lors de la création du graphique: " + config.getChartId(), e);
+            }
+        });
+    }
+    
+    /**
+     * CORRECTION: Crée un graphique à partir d'une configuration
      */
     private Chart createChartFromConfig(ChartPersistenceService.ChartConfig config) throws SQLException {
         if (config.isCrossTable()) {
@@ -259,7 +337,7 @@ public class dashboardController {
             Map<String, Integer> data;
             
             if (config.getChartId().startsWith("default_")) {
-                // Graphiques par défaut avec logique spéciale
+                // CORRECTION: Graphiques par défaut avec logique spéciale
                 data = getDefaultChartData(config.getChartId());
             } else {
                 // Graphique personnalisé
@@ -278,7 +356,7 @@ public class dashboardController {
     }
     
     /**
-     * Obtient les données pour les graphiques par défaut
+     * CORRECTION: Obtient les données pour les graphiques par défaut
      */
     private Map<String, Integer> getDefaultChartData(String chartId) throws SQLException {
         switch (chartId) {
@@ -296,58 +374,7 @@ public class dashboardController {
     }
     
     /**
-     * Crée les graphiques par défaut
-     */
-    private void createDefaultCharts() {
-        CompletableFuture.runAsync(() -> {
-            try {
-                createDefaultChart("default_sexe", "pie", "Répartition par Sexe", 
-                                 dataService::getRepartitionParSexe);
-                createDefaultChart("default_grade", "bar", "Répartition par Grade", 
-                                 dataService::getRepartitionParGrade);
-                createDefaultChart("default_region", "pie", "Répartition par Région", 
-                                 dataService::getRepartitionParRegion);
-                createDefaultChart("default_religion", "bar", "Répartition par Religion", 
-                                 dataService::getRepartitionParReligion);
-            } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Erreur lors de la création des graphiques par défaut", e);
-            }
-        });
-    }
-    
-    /**
-     * Interface fonctionnelle pour obtenir des données
-     */
-    @FunctionalInterface
-    private interface DataSupplier {
-        Map<String, Integer> get() throws SQLException;
-    }
-    
-    /**
-     * Crée un graphique par défaut
-     */
-    private void createDefaultChart(String chartId, String chartType, String title, DataSupplier dataSupplier) {
-        try {
-            Map<String, Integer> data = dataSupplier.get();
-            if (!data.isEmpty()) {
-                Chart chart = ChartFactory.createChart(chartType, data, title, "");
-                
-                Platform.runLater(() -> {
-                    ChartPersistenceService.ChartConfig config = new ChartPersistenceService.ChartConfig(
-                        chartId, chartType, title, "", "", null, null, false, true, 0
-                    );
-                    addChartToContainer(chart, config);
-                });
-                
-                LOGGER.info("Graphique par défaut créé: " + title);
-            }
-        } catch (SQLException e) {
-            LOGGER.log(Level.WARNING, "Erreur lors de la création du graphique par défaut: " + title, e);
-        }
-    }
-    
-    /**
-     * Ajoute un graphique au conteneur avec style moderne
+     * CORRECTION: Ajoute un graphique au conteneur avec style moderne
      */
     private void addChartToContainer(Chart chart, ChartPersistenceService.ChartConfig config) {
         if (chart == null || chartsContainer == null) return;
@@ -355,19 +382,20 @@ public class dashboardController {
         // Créer le conteneur du graphique
         VBox chartContainer = createChartContainer(chart, config);
         
-        // Ajouter au conteneur principal
-        chartsContainer.getChildren().add(chartContainer);
-        activeCharts.put(config.getChartId(), chart);
-        
-        // Masquer le message vide
-        if (emptyStateMessage != null) {
-            emptyStateMessage.setVisible(false);
-            emptyStateMessage.setManaged(false);
-        }
-        
-        updateChartsCount();
-        
-        LOGGER.fine("Graphique ajouté: " + config.getChartTitle());
+        // CORRECTION: Ajouter au conteneur principal sur le thread JavaFX
+        Platform.runLater(() -> {
+            chartsContainer.getChildren().add(chartContainer);
+            activeCharts.put(config.getChartId(), chart);
+            
+            // Masquer le message vide
+            if (emptyStateMessage != null) {
+                emptyStateMessage.setVisible(false);
+                emptyStateMessage.setManaged(false);
+            }
+            
+            updateChartsCount();
+            LOGGER.fine("Graphique ajouté à l'interface: " + config.getChartTitle());
+        });
     }
     
     /**
@@ -421,6 +449,8 @@ public class dashboardController {
         
         MenuItem removeItem = new MenuItem("🗑️ Supprimer");
         removeItem.setOnAction(e -> removeSingleChart(config));
+        // Désactiver la suppression pour les graphiques par défaut
+        removeItem.setDisable(config.isDefault());
         
         contextMenu.getItems().addAll(exportItem, refreshItem, new SeparatorMenuItem(), removeItem);
         
@@ -480,9 +510,14 @@ public class dashboardController {
     }
     
     /**
-     * Supprime un graphique individuel
+     * CORRECTION: Supprime un graphique individuel
      */
     private void removeSingleChart(ChartPersistenceService.ChartConfig config) {
+        if (config.isDefault()) {
+            showErrorAlert("Suppression interdite", "Impossible de supprimer un graphique par défaut.");
+            return;
+        }
+        
         Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
         confirmAlert.setTitle("Confirmation de suppression");
         confirmAlert.setHeaderText("Supprimer ce graphique");
@@ -493,10 +528,11 @@ public class dashboardController {
             // Supprimer de l'interface
             removeChartFromContainer(config.getChartId());
             
-            // Supprimer de la persistance (sauf les graphiques par défaut)
-            if (!config.isDefault()) {
-                ChartPersistenceService.deleteChartConfig(currentService, config.getChartId());
-            }
+            // Supprimer de la persistance
+            ChartPersistenceService.deleteChartConfig(currentService, config.getChartId());
+            
+            // Mettre à jour la liste locale
+            currentChartConfigs.removeIf(c -> c.getChartId().equals(config.getChartId()));
             
             // Enregistrer dans l'historique
             HistoryManager.logDeletion("Dashboard", 
@@ -507,30 +543,31 @@ public class dashboardController {
     }
     
     /**
-     * Supprime un graphique du conteneur
+     * CORRECTION: Supprime un graphique du conteneur
      */
     private void removeChartFromContainer(String chartId) {
-        activeCharts.remove(chartId);
+        Chart chartToRemove = activeCharts.remove(chartId);
         
-        // Trouver et supprimer le conteneur correspondant
-        chartsContainer.getChildren().removeIf(node -> {
-            if (node instanceof VBox) {
-                VBox container = (VBox) node;
-                if (!container.getChildren().isEmpty() && container.getChildren().get(0) instanceof Chart) {
-                    Chart chart = (Chart) container.getChildren().get(0);
-                    // Identifier le graphique par son titre ou autre propriété
-                    return activeCharts.values().stream().noneMatch(c -> c == chart);
+        if (chartToRemove != null) {
+            // Trouver et supprimer le conteneur correspondant
+            chartsContainer.getChildren().removeIf(node -> {
+                if (node instanceof VBox) {
+                    VBox container = (VBox) node;
+                    if (!container.getChildren().isEmpty() && container.getChildren().get(0) instanceof Chart) {
+                        Chart chart = (Chart) container.getChildren().get(0);
+                        return chart == chartToRemove;
+                    }
                 }
-            }
-            return false;
-        });
+                return false;
+            });
+        }
         
         updateEmptyState();
         updateChartsCount();
     }
     
     /**
-     * Met à jour le compteur de graphiques
+     * CORRECTION: Met à jour le compteur de graphiques
      */
     private void updateChartsCount() {
         if (chartsCount != null) {
@@ -546,9 +583,11 @@ public class dashboardController {
      */
     private void updateEmptyState() {
         if (emptyStateMessage != null) {
-            boolean isEmpty = activeCharts.isEmpty();
-            emptyStateMessage.setVisible(isEmpty);
-            emptyStateMessage.setManaged(isEmpty);
+            Platform.runLater(() -> {
+                boolean isEmpty = activeCharts.isEmpty();
+                emptyStateMessage.setVisible(isEmpty);
+                emptyStateMessage.setManaged(isEmpty);
+            });
         }
     }
     
@@ -566,19 +605,29 @@ public class dashboardController {
     }
     
     /**
-     * Programme l'actualisation automatique
+     * CORRECTION: Programme l'actualisation automatique avec vérification des changements
      */
     private void scheduleAutoRefresh() {
-        // Actualisation toutes les 10 minutes
+        // Actualisation automatique toutes les 5 minutes avec vérification des changements
         scheduler.scheduleWithFixedDelay(() -> {
             if (isInitialized && !isLoading) {
-                Platform.runLater(this::refreshDashboard);
+                try {
+                    // Vérifier si les données ont changé
+                    if (dataService.hasDataChanged(lastDataCheckTime)) {
+                        LOGGER.info("Changements détectés dans la base de données, actualisation du dashboard");
+                        Platform.runLater(this::refreshDashboard);
+                    }
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Erreur lors de la vérification des changements", e);
+                }
             }
-        }, 10, 10, TimeUnit.MINUTES);
+        }, 5, 5, TimeUnit.MINUTES);
+        
+        LOGGER.info("Actualisation automatique programmée (5 minutes)");
     }
     
     /**
-     * Actualise complètement le dashboard
+     * CORRECTION: Actualise complètement le dashboard
      */
     @FXML
     public void refreshDashboard() {
@@ -609,11 +658,12 @@ public class dashboardController {
     }
     
     /**
-     * Callback appelé quand la configuration des graphiques change
+     * CORRECTION: Callback appelé quand la configuration des graphiques change
      */
     private void onChartConfigurationChanged() {
         Platform.runLater(() -> {
             LOGGER.info("Configuration des graphiques modifiée, rechargement...");
+            // Recharger complètement
             loadDashboardDataAsync();
         });
     }
@@ -709,6 +759,13 @@ public class dashboardController {
     public void cleanup() {
         if (scheduler != null && !scheduler.isShutdown()) {
             scheduler.shutdown();
+            try {
+                if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    scheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                scheduler.shutdownNow();
+            }
         }
         activeCharts.clear();
         currentChartConfigs.clear();

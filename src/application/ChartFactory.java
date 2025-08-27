@@ -9,7 +9,7 @@ import javafx.application.Platform;
 import java.util.*;
 
 /**
- * Factory pour créer différents types de graphiques de manière optimisée
+ * Factory pour créer différents types de graphiques de manière optimisée - VERSION AMÉLIORÉE
  */
 public class ChartFactory {
     
@@ -22,7 +22,7 @@ public class ChartFactory {
     };
     
     /**
-     * Crée un graphique selon le type demandé
+     * CORRECTION: Crée un graphique selon le type demandé avec mapping amélioré
      */
     public static Chart createChart(String chartType, Map<String, Integer> data, String title, String xAxisLabel) {
         if (data == null || data.isEmpty()) {
@@ -31,14 +31,19 @@ public class ChartFactory {
         
         switch (chartType.toLowerCase()) {
             case "camembert":
+            case "pie":
                 return createModernPieChart(data, title);
             case "histogramme":
+            case "bar":
                 return createModernBarChart(data, title, xAxisLabel);
             case "ligne":
+            case "line":
                 return createModernLineChart(data, title, xAxisLabel);
             case "aire":
+            case "area":
                 return createModernAreaChart(data, title, xAxisLabel);
             case "nuage":
+            case "scatter":
                 return createModernScatterChart(data, title, xAxisLabel);
             default:
                 return createModernBarChart(data, title, xAxisLabel);
@@ -46,7 +51,7 @@ public class ChartFactory {
     }
     
     /**
-     * Crée un graphique croisé selon le type demandé
+     * CORRECTION: Crée un graphique croisé selon le type demandé avec mapping amélioré
      */
     public static Chart createCrossChart(String chartType, Map<String, Map<String, Integer>> crossData, 
                                        String title, String xAxisLabel, String seriesLabel) {
@@ -56,12 +61,16 @@ public class ChartFactory {
         
         switch (chartType.toLowerCase()) {
             case "empile":
+            case "stacked":
                 return createModernStackedBarChart(crossData, title, xAxisLabel, seriesLabel);
             case "groupe":
+            case "grouped":
                 return createModernGroupedBarChart(crossData, title, xAxisLabel, seriesLabel);
             case "chaleur":
+            case "heatmap":
                 return createModernHeatmapChart(crossData, title, xAxisLabel, seriesLabel);
             case "nuage":
+            case "scatter":
                 return createModernCrossScatterChart(crossData, title, xAxisLabel, seriesLabel);
             default:
                 return createModernStackedBarChart(crossData, title, xAxisLabel, seriesLabel);
@@ -106,7 +115,7 @@ public class ChartFactory {
         CategoryAxis xAxis = new CategoryAxis();
         NumberAxis yAxis = new NumberAxis();
         
-        configureAxes(xAxis, yAxis, xAxisLabel, "Nombre");
+        configureAxes(xAxis, yAxis, xAxisLabel != null ? xAxisLabel : "Catégorie", "Nombre");
         
         BarChart<String, Number> chart = new BarChart<>(xAxis, yAxis);
         chart.setTitle(title);
@@ -138,7 +147,7 @@ public class ChartFactory {
         CategoryAxis xAxis = new CategoryAxis();
         NumberAxis yAxis = new NumberAxis();
         
-        configureAxes(xAxis, yAxis, xAxisLabel, "Nombre");
+        configureAxes(xAxis, yAxis, xAxisLabel != null ? xAxisLabel : "Catégorie", "Nombre");
         
         LineChart<String, Number> chart = new LineChart<>(xAxis, yAxis);
         chart.setTitle(title);
@@ -174,7 +183,7 @@ public class ChartFactory {
         CategoryAxis xAxis = new CategoryAxis();
         NumberAxis yAxis = new NumberAxis();
         
-        configureAxes(xAxis, yAxis, xAxisLabel, "Nombre");
+        configureAxes(xAxis, yAxis, xAxisLabel != null ? xAxisLabel : "Catégorie", "Nombre");
         
         AreaChart<String, Number> chart = new AreaChart<>(xAxis, yAxis);
         chart.setTitle(title);
@@ -203,7 +212,7 @@ public class ChartFactory {
         CategoryAxis xAxis = new CategoryAxis();
         NumberAxis yAxis = new NumberAxis();
         
-        configureAxes(xAxis, yAxis, xAxisLabel, "Valeurs");
+        configureAxes(xAxis, yAxis, xAxisLabel != null ? xAxisLabel : "Catégorie", "Valeurs");
         
         ScatterChart<String, Number> chart = new ScatterChart<>(xAxis, yAxis);
         chart.setTitle(title);
@@ -231,7 +240,7 @@ public class ChartFactory {
         CategoryAxis xAxis = new CategoryAxis();
         NumberAxis yAxis = new NumberAxis();
         
-        configureAxes(xAxis, yAxis, xAxisLabel, "Nombre");
+        configureAxes(xAxis, yAxis, xAxisLabel != null ? xAxisLabel : "Catégorie", "Nombre");
         
         StackedBarChart<String, Number> chart = new StackedBarChart<>(xAxis, yAxis);
         chart.setTitle(title);
@@ -286,7 +295,7 @@ public class ChartFactory {
         CategoryAxis xAxis = new CategoryAxis();
         NumberAxis yAxis = new NumberAxis();
         
-        configureAxes(xAxis, yAxis, xAxisLabel, "Nombre");
+        configureAxes(xAxis, yAxis, xAxisLabel != null ? xAxisLabel : "Catégorie", "Nombre");
         
         BarChart<String, Number> chart = new BarChart<>(xAxis, yAxis);
         chart.setTitle(title);
@@ -344,7 +353,7 @@ public class ChartFactory {
         CategoryAxis xAxis = new CategoryAxis();
         NumberAxis yAxis = new NumberAxis();
         
-        configureAxes(xAxis, yAxis, xAxisLabel, "Intensité");
+        configureAxes(xAxis, yAxis, xAxisLabel != null ? xAxisLabel : "Catégorie", "Intensité");
         
         AreaChart<String, Number> chart = new AreaChart<>(xAxis, yAxis);
         chart.setTitle(title + " (Intensité)");
@@ -384,7 +393,7 @@ public class ChartFactory {
         CategoryAxis xAxis = new CategoryAxis();
         NumberAxis yAxis = new NumberAxis();
         
-        configureAxes(xAxis, yAxis, xAxisLabel, "Valeurs");
+        configureAxes(xAxis, yAxis, xAxisLabel != null ? xAxisLabel : "Catégorie", "Valeurs");
         
         ScatterChart<String, Number> chart = new ScatterChart<>(xAxis, yAxis);
         chart.setTitle(title + " (Corrélation)");
@@ -495,17 +504,17 @@ public class ChartFactory {
     }
     
     /**
-     * Types de graphiques disponibles
+     * AMÉLIORATION: Types de graphiques disponibles avec tous les types demandés
      */
     public enum ChartType {
-        PIE("Camembert", "pie"),
-        BAR("Barres", "bar"),
-        LINE("Ligne", "line"),
-        AREA("Aire", "area"),
-        SCATTER("Nuage de points", "scatter"),
-        STACKED_BAR("Barres empilées", "stacked"),
-        GROUPED_BAR("Barres groupées", "grouped"),
-        HEATMAP("Carte de chaleur", "heatmap");
+        PIE("Camembert", "camembert"),
+        BAR("Histogramme", "histogramme"),
+        LINE("Ligne", "ligne"),
+        AREA("Aire", "aire"),
+        SCATTER("Nuage de points", "nuage"),
+        STACKED_BAR("Barres empilées", "empile"),
+        GROUPED_BAR("Barres groupées", "groupe"),
+        HEATMAP("Carte de chaleur", "chaleur");
         
         private final String displayName;
         private final String code;
@@ -532,7 +541,25 @@ public class ChartFactory {
                     return type.getCode();
                 }
             }
-            return "bar"; // défaut
+            return "histogramme"; // défaut
+        }
+        
+        /**
+         * NOUVEAU: Obtient les types de graphiques pour graphiques simples
+         */
+        public static List<String> getSingleVariableChartTypes() {
+            return Arrays.asList(
+                "Camembert", "Histogramme", "Ligne", "Aire", "Nuage de points"
+            );
+        }
+        
+        /**
+         * NOUVEAU: Obtient les types de graphiques pour graphiques croisés
+         */
+        public static List<String> getCrossTableChartTypes() {
+            return Arrays.asList(
+                "Barres empilées", "Barres groupées", "Carte de chaleur", "Nuage de points"
+            );
         }
     }
 }
