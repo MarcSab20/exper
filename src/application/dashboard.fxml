@@ -3,76 +3,102 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.text.Text?>
 
 <VBox xmlns="http://javafx.com/javafx"
       xmlns:fx="http://javafx.com/fxml"
       fx:controller="application.dashboardController"
       stylesheets="@dashboardCss.css"
-      styleClass="main-container">
+      styleClass="modern-dashboard-container">
 
-    <!-- Header avec bouton Options -->
+    <!-- Header avec bouton de personnalisation -->
     <HBox styleClass="dashboard-header" alignment="CENTER_RIGHT" spacing="20">
         <padding>
             <Insets top="15" right="25" bottom="10" left="25"/>
         </padding>
         
-        <!-- Informations de service (optionnel) -->
+        <!-- Informations du service (à gauche) -->
+        <VBox alignment="CENTER_LEFT" spacing="2">
+            <Text text="📊 Dashboard Moderne" styleClass="dashboard-title"/>
+            <Label fx:id="serviceInfoLabel" styleClass="service-info" text="Service: Admin | 0 tables"/>
+        </VBox>
+        
+        <!-- Spacer pour pousser le bouton à droite -->
         <Region HBox.hgrow="ALWAYS"/>
         
-        <!-- Bouton de personnalisation bien visible -->
+        <!-- Bouton de personnalisation -->
         <Button onAction="#showCustomizeDialog" 
-                styleClass="options-button" 
-                text="⚙️ Personnaliser Dashboard"/>
+                styleClass="customize-button" 
+                text="⚙️ Personnaliser"/>
+        
+        <!-- Bouton d'actualisation -->
+        <Button onAction="#refreshDashboard" 
+                styleClass="refresh-button" 
+                text="🔄 Actualiser"/>
     </HBox>
 
-    <!-- Barre de statistiques -->
-    <FlowPane styleClass="stats-bar" hgap="25" vgap="20" alignment="CENTER">
+    <!-- Barre de statistiques principales -->
+    <FlowPane styleClass="stats-container" hgap="20" vgap="15" alignment="CENTER">
         <padding>
             <Insets top="20" right="25" bottom="20" left="25"/>
         </padding>
         
-        <VBox fx:id="messagesBox" styleClass="stat-box" alignment="CENTER" spacing="12">
-            <Label fx:id="messagesLabel" styleClass="stat-label" text="Messages"/>
-            <Label fx:id="messagesCount" styleClass="stat-value" text="0"/>
+        <!-- Personnel Total -->
+        <VBox styleClass="stat-card stat-primary" alignment="CENTER" spacing="8">
+            <Label fx:id="personnelTotalLabel" styleClass="stat-label" text="Personnel Total"/>
+            <Label fx:id="personnelTotalCount" styleClass="stat-value stat-primary-value" text="0"/>
+            <Text text="👥" styleClass="stat-icon"/>
         </VBox>
 
-        <VBox fx:id="salesBox" styleClass="stat-box" alignment="CENTER" spacing="12">
-            <Label fx:id="salesLabel" styleClass="stat-label" text="Ventes"/>
-            <Label fx:id="salesCount" styleClass="stat-value" text="0"/>
+        <!-- Personnel Officiers -->
+        <VBox styleClass="stat-card stat-success" alignment="CENTER" spacing="8">
+            <Label fx:id="personnelOfficiersLabel" styleClass="stat-label" text="Personnel Officiers"/>
+            <Label fx:id="personnelOfficiersCount" styleClass="stat-value stat-success-value" text="0"/>
+            <Text text="🎖️" styleClass="stat-icon"/>
         </VBox>
 
-        <VBox fx:id="notificationsBox" styleClass="stat-box" alignment="CENTER" spacing="12">
-            <Label fx:id="notificationsLabel" styleClass="stat-label" text="Notifications"/>
-            <Label fx:id="notificationsCount" styleClass="stat-value" text="0"/>
+        <!-- Personnel Féminin -->
+        <VBox styleClass="stat-card stat-info" alignment="CENTER" spacing="8">
+            <Label fx:id="personnelFemininLabel" styleClass="stat-label" text="Personnel Féminin"/>
+            <Label fx:id="personnelFemininCount" styleClass="stat-value stat-info-value" text="0"/>
+            <Text text="👩‍✈️" styleClass="stat-icon"/>
         </VBox>
 
-        <VBox fx:id="scheduledBox" styleClass="stat-box" alignment="CENTER" spacing="12">
-            <Label fx:id="scheduledLabel" styleClass="stat-label" text="Planifiés"/>
-            <Label fx:id="scheduledCount" styleClass="stat-value" text="0"/>
+        <!-- Formations -->
+        <VBox styleClass="stat-card stat-warning" alignment="CENTER" spacing="8">
+            <Label fx:id="formationsLabel" styleClass="stat-label" text="Formations"/>
+            <Label fx:id="formationsCount" styleClass="stat-value stat-warning-value" text="0"/>
+            <Text text="🎓" styleClass="stat-icon"/>
         </VBox>
     </FlowPane>
 
-    <!-- Titre de section avec informations -->
-    <HBox alignment="CENTER_LEFT" spacing="20" style="-fx-padding: 15 25 10 25;">
-        <Text text="📊 Graphiques du Dashboard" 
-              style="-fx-font-size: 18px; -fx-font-weight: bold; -fx-fill: #2c3e50;"/>
+    <!-- Séparateur -->
+    <Separator styleClass="dashboard-separator"/>
+
+    <!-- Titre de la section graphiques -->
+    <HBox alignment="CENTER_LEFT" spacing="20" styleClass="section-header">
+        <padding>
+            <Insets top="15" right="25" bottom="10" left="25"/>
+        </padding>
+        
+        <Text text="📈 Graphiques du Dashboard" styleClass="section-title"/>
+        
         <Region HBox.hgrow="ALWAYS"/>
-        <Label fx:id="serviceInfoLabel" 
-               style="-fx-font-size: 12px; -fx-text-fill: #6c757d; -fx-font-style: italic;"
-               text="Service: Admin | Tables: 0"/>
+        
+        <Label fx:id="chartsCount" 
+               styleClass="charts-counter"
+               text="0 graphique(s) affiché(s)"/>
     </HBox>
 
-    <!-- Conteneur principal de graphiques avec scroll -->
-    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS" styleClass="charts-scroll">
+    <!-- Conteneur principal des graphiques avec scroll -->
+    <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS" styleClass="charts-scroll-pane">
         <padding>
             <Insets top="5" right="0" bottom="20" left="0"/>
         </padding>
         
-        <!-- Conteneur des graphiques avec FlowPane amélioré -->
+        <!-- Conteneur des graphiques -->
         <FlowPane fx:id="chartsContainer" 
-                  styleClass="charts-container" 
+                  styleClass="modern-charts-container" 
                   alignment="TOP_CENTER"
                   hgap="25" 
                   vgap="25"
@@ -81,40 +107,52 @@
                 <Insets top="15" right="25" bottom="15" left="25"/>
             </padding>
             
-            <!-- Message par défaut quand aucun graphique n'est présent -->
-            <VBox alignment="CENTER" spacing="15" 
-                  style="-fx-min-width: 400; -fx-min-height: 200; -fx-background-color: #f8f9fa; -fx-background-radius: 15; -fx-border-color: #dee2e6; -fx-border-width: 2; -fx-border-style: dashed; -fx-border-radius: 15;"
-                  fx:id="emptyStateMessage">
-                <Text text="📈" style="-fx-font-size: 48px;"/>
-                <Text text="Aucun graphique à afficher" 
-                      style="-fx-font-size: 16px; -fx-font-weight: bold; -fx-fill: #6c757d;"/>
-                <Text text="Cliquez sur 'Personnaliser Dashboard' pour ajouter des graphiques" 
-                      style="-fx-font-size: 12px; -fx-fill: #adb5bd; -fx-text-alignment: center; -fx-wrap-text: true;"
-                      wrappingWidth="300"/>
+            <!-- Message d'état vide (masqué par défaut) -->
+            <VBox fx:id="emptyStateMessage" 
+                  alignment="CENTER" 
+                  spacing="20" 
+                  styleClass="empty-state-container"
+                  visible="false" 
+                  managed="false">
+                
+                <Text text="📊" styleClass="empty-state-icon"/>
+                
+                <VBox alignment="CENTER" spacing="8">
+                    <Text text="Aucun graphique à afficher" 
+                          styleClass="empty-state-title"/>
+                    <Text text="Cliquez sur 'Personnaliser' pour ajouter des graphiques personnalisés" 
+                          styleClass="empty-state-subtitle"/>
+                </VBox>
+                
+                <Button onAction="#showCustomizeDialog" 
+                        styleClass="empty-state-button" 
+                        text="➕ Ajouter des graphiques"/>
             </VBox>
         </FlowPane>
     </ScrollPane>
 
-    <!-- Footer avec informations additionnelles -->
-    <HBox alignment="CENTER" spacing="30" 
-          style="-fx-background-color: #f8f9fa; -fx-padding: 15 25; -fx-border-color: #dee2e6; -fx-border-width: 1 0 0 0;">
+    <!-- Footer avec informations -->
+    <HBox alignment="CENTER" spacing="30" styleClass="dashboard-footer">
+        <padding>
+            <Insets top="15" right="25" bottom="15" left="25"/>
+        </padding>
         
+        <!-- Dernière mise à jour -->
         <HBox alignment="CENTER_LEFT" spacing="8">
-            <Text text="🔄" style="-fx-font-size: 14px;"/>
-            <Text text="Dernière actualisation:" 
-                  style="-fx-font-size: 12px; -fx-fill: #6c757d;"/>
-            <Text fx:id="lastUpdateTime" 
-                  text="Maintenant" 
-                  style="-fx-font-size: 12px; -fx-fill: #2c3e50; -fx-font-weight: bold;"/>
+            <Text text="🔄" styleClass="footer-icon"/>
+            <Text text="Dernière actualisation:" styleClass="footer-label"/>
+            <Label fx:id="lastUpdateTime" 
+                   text="Maintenant" 
+                   styleClass="footer-value"/>
         </HBox>
         
         <Region HBox.hgrow="ALWAYS"/>
         
+        <!-- Indicateur de statut -->
         <HBox alignment="CENTER_RIGHT" spacing="8">
-            <Text text="📋" style="-fx-font-size: 14px;"/>
-            <Text fx:id="chartsCount" 
-                  text="0 graphique(s) affiché(s)" 
-                  style="-fx-font-size: 12px; -fx-fill: #6c757d;"/>
+            <Text text="📡" styleClass="footer-icon"/>
+            <Text text="Statut:" styleClass="footer-label"/>
+            <Label text="En ligne" styleClass="status-online"/>
         </HBox>
     </HBox>
 
